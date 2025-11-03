@@ -12,16 +12,24 @@ void create_world(int p, int q, world_func func, void *arg) {
             }
             int x = p * CHUNK_SIZE + dx;
             int z = q * CHUNK_SIZE + dz;
+            int h, w;
+#if FLATLANDS
+            // Flat world generation
+            h = FLATLANDS_HEIGHT;
+            w = 1;
+#else
+            // Normal terrain generation with simplex noise
             float f = simplex2(x * 0.01, z * 0.01, 4, 0.5, 2);
             float g = simplex2(-x * 0.01, -z * 0.01, 2, 0.9, 2);
             int mh = g * 32 + 16;
-            int h = f * mh;
-            int w = 1;
+            h = f * mh;
+            w = 1;
             int t = 12;
             if (h <= t) {
                 h = t;
                 w = 2;
             }
+#endif
             // sand and grass terrain
             for (int y = 0; y < h; y++) {
                 func(x, y, z, w * flag, arg);

@@ -18,6 +18,7 @@
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
+#include "voxel_text.h"
 #include "world.h"
 
 #define MAX_CHUNKS 8192
@@ -2123,6 +2124,79 @@ void parse_command(const char *buffer, int forward) {
     else if (sscanf(buffer, "/cylinder %d", &radius) == 1) {
         cylinder(&g->block0, &g->block1, radius, 0);
     }
+    else if (strncmp(buffer, "/vtext ", 7) == 0) {
+        // Render voxel text: /vtext X Y Z BLOCK_TYPE MESSAGE
+        int x, y, z, block_type;
+        char text[256];
+        if (sscanf(buffer + 7, "%d %d %d %d %255[^\n]", &x, &y, &z, &block_type, text) == 5) {
+            int scale = 1;
+
+            printf("Rendering voxel text '%s' at (%d, %d, %d) with block type %d\n",
+                   text, x, y, z, block_type);
+
+            int width = voxel_text_render(text, x, y, z, block_type, scale, builder_block);
+
+            char message[256];
+            snprintf(message, sizeof(message),
+                     "Rendered '%s' at (%d,%d,%d) - %d voxels wide", text, x, y, z, width);
+            add_message(message);
+        } else {
+            add_message("Usage: /vtext X Y Z BLOCK_TYPE MESSAGE");
+            add_message("Example: /vtext 0 100 0 3 Hello Sky");
+        }
+    }
+    else if (strncmp(buffer, "/vtext-jp ", 10) == 0) {
+        // Japanese: /vtext-jp X Y Z BLOCK_TYPE
+        int x, y, z, block_type;
+        if (sscanf(buffer + 10, "%d %d %d %d", &x, &y, &z, &block_type) == 4) {
+            const char *text = "こんにちは世界"; // Konnichiwa Sekai (Hello World)
+            int width = voxel_text_render(text, x, y, z, block_type, 1, builder_block);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Japanese at (%d,%d,%d) - %d wide", x, y, z, width);
+            add_message(msg);
+        } else {
+            add_message("Usage: /vtext-jp X Y Z BLOCK_TYPE");
+        }
+    }
+    else if (strncmp(buffer, "/vtext-cn ", 10) == 0) {
+        // Chinese: /vtext-cn X Y Z BLOCK_TYPE
+        int x, y, z, block_type;
+        if (sscanf(buffer + 10, "%d %d %d %d", &x, &y, &z, &block_type) == 4) {
+            const char *text = "你好世界"; // Ni Hao Shijie (Hello World)
+            int width = voxel_text_render(text, x, y, z, block_type, 1, builder_block);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Chinese at (%d,%d,%d) - %d wide", x, y, z, width);
+            add_message(msg);
+        } else {
+            add_message("Usage: /vtext-cn X Y Z BLOCK_TYPE");
+        }
+    }
+    else if (strncmp(buffer, "/vtext-kr ", 10) == 0) {
+        // Korean: /vtext-kr X Y Z BLOCK_TYPE
+        int x, y, z, block_type;
+        if (sscanf(buffer + 10, "%d %d %d %d", &x, &y, &z, &block_type) == 4) {
+            const char *text = "안녕하세요"; // Annyeonghaseyo (Hello)
+            int width = voxel_text_render(text, x, y, z, block_type, 1, builder_block);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Korean at (%d,%d,%d) - %d wide", x, y, z, width);
+            add_message(msg);
+        } else {
+            add_message("Usage: /vtext-kr X Y Z BLOCK_TYPE");
+        }
+    }
+    else if (strncmp(buffer, "/vtext-ru ", 10) == 0) {
+        // Russian: /vtext-ru X Y Z BLOCK_TYPE
+        int x, y, z, block_type;
+        if (sscanf(buffer + 10, "%d %d %d %d", &x, &y, &z, &block_type) == 4) {
+            const char *text = "Привет мир"; // Privet mir (Hello world)
+            int width = voxel_text_render(text, x, y, z, block_type, 1, builder_block);
+            char msg[256];
+            snprintf(msg, sizeof(msg), "Russian at (%d,%d,%d) - %d wide", x, y, z, width);
+            add_message(msg);
+        } else {
+            add_message("Usage: /vtext-ru X Y Z BLOCK_TYPE");
+        }
+    }
     else if (forward) {
         client_talk(buffer);
     }
@@ -2588,6 +2662,11 @@ int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     srand(time(NULL));
     rand();
+
+    // Initialize voxel text system
+    if (!voxel_text_init("../Fonts/unifont-17.0.03.hex")) {
+        fprintf(stderr, "Warning: Could not initialize voxel text system\n");
+    }
 
     // WINDOW INITIALIZATION //
     if (!glfwInit()) {

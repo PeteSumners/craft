@@ -1,0 +1,55 @@
+GNU UNIFONT LICENSE
+===================
+
+GNU Unifont is dual-licensed under your choice of licenses:
+
+1. GNU General Public License (GPL) version 2 or later, with the
+   GNU Font Embedding Exception
+
+2. SIL Open Font License (OFL) version 1.1
+
+You may use, modify, and distribute this font under either license.
+
+-------------------------------------------------------------------------
+
+OPTION 1: GNU GPL 2+ with Font Embedding Exception
+---------------------------------------------------
+
+This font is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 2 of the License, or (at your
+option) any later version.
+
+With the following exception:
+
+As a special exception, if you create a document which uses this font,
+and embed this font or unaltered portions of this font into the document,
+this font does not by itself cause the resulting document to be covered
+by the GNU General Public License. This exception does not however
+invalidate any other reasons why the document might be covered by the
+GNU General Public License. If you modify this font, you may extend
+this exception to your version of the font, but you are not obligated
+to do so. If you do not wish to do so, delete this exception statement
+from your version.
+
+Full GPL text: https://www.gnu.org/licenses/gpl-2.0.html
+
+-------------------------------------------------------------------------
+
+OPTION 2: SIL Open Font License 1.1
+-----------------------------------
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+Full OFL text: https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL
+
+-------------------------------------------------------------------------
+
+Source and More Information
+----------------------------
+
+GNU Unifont version 17.0.03
+Released: November 1, 2025
+Website: https://unifoundry.com/unifont/
