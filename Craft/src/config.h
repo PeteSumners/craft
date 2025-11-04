@@ -17,7 +17,7 @@
 // rendering options
 #define SHOW_LIGHTS 1
 #define SHOW_PLANTS 1
-#define SHOW_CLOUDS 1
+#define SHOW_CLOUDS 0               // Disabled for Bible viewing (clearer sky)
 #define SHOW_TREES 1
 #define SHOW_ITEM 1
 #define SHOW_CROSSHAIRS 1
@@ -25,10 +25,18 @@
 #define SHOW_INFO_TEXT 1
 #define SHOW_CHAT_TEXT 1
 #define SHOW_PLAYER_NAMES 1
+#define SHOW_FOG 0              // Set to 0 for Bible viewing (clearer text at distance)
 
 // world generation options
-#define FLATLANDS 0
-#define FLATLANDS_HEIGHT 32
+#define FLATLANDS 1             // 1 = flat world for Bible viewing, 0 = normal terrain
+#define FLATLANDS_HEIGHT 32     // Height of flat ground
+
+// Bible world generation options
+#define GENERATE_BIBLE 1                 // 1 = Generate Bible scrolls at world start, 0 = disabled
+#define BIBLE_START_X 1000               // Starting X coordinate for first book (Genesis)
+#define BIBLE_START_Y 75                 // Y level for Bible text - just above clouds
+#define BIBLE_START_Z 0                  // Starting Z coordinate for Bible scrolls
+#define BIBLE_BLOCK_TYPE 12              // Block type for Bible text (12 = LIGHT_STONE - bright white)
 
 // key bindings
 #define CRAFT_KEY_FORWARD 'W'
@@ -48,10 +56,10 @@
 #define CRAFT_KEY_SIGN '`'
 
 // advanced parameters
-#define CREATE_CHUNK_RADIUS 15
-#define RENDER_CHUNK_RADIUS 15
+#define CREATE_CHUNK_RADIUS 10   // Reduced for Bible viewing (320 block radius)
+#define RENDER_CHUNK_RADIUS 8    // Reduced for Bible viewing (256 block radius)
 #define RENDER_SIGN_RADIUS 4
-#define DELETE_CHUNK_RADIUS 21
+#define DELETE_CHUNK_RADIUS 14   // Reduced for Bible viewing (448 block radius)
 #define CHUNK_SIZE 32
 #define COMMIT_INTERVAL 5
 

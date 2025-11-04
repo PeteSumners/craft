@@ -4,13 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Chunky Craft** is a Minecraft-inspired voxel game written in C with OpenGL, featuring procedural terrain generation, multiplayer support, and a recently-added voxel text rendering system using GNU Unifont. The project is a fork/extension of Michael Fogleman's original Craft game with custom enhancements including multi-language text rendering capabilities.
+**Chunky Craft** is a Minecraft-inspired voxel game written in C with OpenGL, featuring procedural terrain generation, multiplayer support, and an advanced voxel text rendering system using GNU Unifont. The project is a fork/extension of Michael Fogleman's original Craft game with custom enhancements including:
+
+- **Multi-language text rendering** - Support for English, Chinese, Japanese, Korean, Russian, and more (58,000+ Unicode glyphs)
+- **Bible rendering system** - Complete King James Version (31,102 verses, 66 books) renderable as 3D voxel text
+- **Dual layout modes** - Vertical (traditional) and horizontal/flat (for large texts, viewed from above)
+- **Enhanced flying controls** - Spectator-style movement at 50 blocks/sec for easy navigation
+- **Word wrapping** - Automatic text layout with configurable line widths
+
+## Repository Structure
+
+```
+craft/                         <- Repository root
+├── Bible/
+│   └── kjv.txt               <- King James Version text (31,102 verses)
+├── Craft/                     <- WORK FROM THIS DIRECTORY
+│   ├── src/                  <- All C source files (.c and .h)
+│   ├── shaders/              <- GLSL shader files (loaded at runtime)
+│   ├── textures/             <- PNG texture files
+│   ├── deps/                 <- Vendored dependencies
+│   ├── CMakeLists.txt        <- Build configuration
+│   ├── server.py             <- Multiplayer server
+│   └── craft.exe             <- Compiled game (Windows)
+├── Docs/                     <- Documentation (see Documentation section below)
+├── Fonts/
+│   └── unifont-17.0.03.hex   <- GNU Unifont (58,000+ glyphs)
+├── CLAUDE.md                 <- This file
+└── TODO.md                   <- Project status and future ideas
+```
+
+**Important:** Always run build and game commands from the `Craft/` directory. The game expects `../Fonts/` and `../Bible/` to be accessible relative to the working directory.
 
 ## Build System & Commands
 
 ### Building the Project
 
-The project uses CMake as its build system. All commands should be run from the `Craft/` directory:
+The project uses CMake as its build system. **All commands should be run from the `Craft/` directory:**
 
 ```bash
 cd Craft
@@ -125,7 +154,7 @@ void voxel_text_cleanup(void);
 - Text advances along X-axis, with Y as vertical
 
 **In-game commands:**
-- `/vtext X Y Z BLOCK_TYPE MESSAGE` - Render English text
+- `/vtext X Y Z BLOCK_TYPE MESSAGE` - Render English text (vertical layout)
 - `/vtext-jp X Y Z BLOCK_TYPE` - Japanese demo
 - `/vtext-cn X Y Z BLOCK_TYPE` - Chinese demo
 - `/vtext-kr X Y Z BLOCK_TYPE` - Korean demo
@@ -145,7 +174,47 @@ Files: `src/client.c` / `src/client.h` / `server.py`
 
 Client interpolates player positions for smooth animation using `state1` and `state2` buffers.
 
-#### 6. Input & Commands
+#### 6. Bible Rendering System
+
+**NEW FEATURE** - Render Bible text in two layout modes: vertical and horizontal (flat).
+
+Files: `src/bible.c` / `src/bible.h`
+
+Key API:
+```c
+int bible_init(const char *bible_path);  // Initialize with ../Bible/kjv.txt
+int bible_render_verse(const char *book, int chapter, int verse, ...);
+int bible_render_verse_range(const char *book, int chapter, int start_verse, int end_verse, ...);
+int bible_render_chapter(const char *book, int chapter, ...);
+int bible_render_chapter_flat(const char *book, int chapter, ...);  // Horizontal layout
+void bible_cleanup(void);
+```
+
+**How it works:**
+- Loads King James Version from tab-delimited text file (31,102 verses, 66 books)
+- Parses format: `Book Chapter:Verse<TAB>Text`
+- Word wrapping with configurable line width
+- Vertical mode: Text advances down (Y-axis), limited by world height (0-255)
+- Flat mode: Text advances forward (Z-axis), unlimited horizontal space
+
+**In-game commands:**
+- `/bible BOOK CHAPTER:VERSE X Y Z BLOCK_TYPE [WIDTH]` - Single verse or range (vertical)
+  - Example: `/bible Genesis 1:1 0 100 0 3 60`
+  - Example: `/bible John 3:16-17 0 100 0 3 50`
+- `/bible BOOK CHAPTER X Y Z BLOCK_TYPE [WIDTH]` - Full chapter (vertical)
+  - Example: `/bible Psalm 23 0 200 0 3 60`
+- `/bibleflat BOOK CHAPTER X Y Z BLOCK_TYPE [WIDTH]` - Full chapter (horizontal/flat layout)
+  - Example: `/bibleflat Genesis 1 0 200 0 3 60`
+  - **Renders text along Z-axis instead of Y-axis**
+  - Perfect for large chapters (e.g., Psalm 119 with 176 verses)
+  - View from above by flying up and looking down
+
+**Important notes:**
+- Multi-word book names: Use spaces (e.g., `/bible 1 Kings 8:27 ...`)
+- Flat rendering is ideal for chapters with 30+ verses (avoids Y-axis height limits)
+- Default WIDTH is 60 characters; adjust 40-80 for different layouts
+
+#### 7. Input & Commands
 
 In-game text commands parsed in `parse_command()` function in `main.c`:
 
@@ -155,7 +224,9 @@ In-game text commands parsed in `parse_command()` function in `main.c`:
 - `/online HOST [PORT]` / `/offline [FILE]` - Mode switching
 - `/pq P Q` - Teleport to chunk coordinates
 - `/spawn` - Return to spawn
-- `/vtext ...` - Voxel text rendering (see above)
+- `/vtext X Y Z BLOCK_TYPE MESSAGE` - Voxel text rendering (vertical layout)
+- `/bible ...` - Bible text rendering (see Bible Rendering System above)
+- `/bibleflat ...` - Bible flat rendering (horizontal layout, see above)
 
 ### Key Data Structures
 
@@ -189,6 +260,29 @@ Performance-critical values:
 - `WORKERS` (4) - Background threads for chunk generation
 
 Block types enumeration is in `src/item.h` (EMPTY=0, GRASS=1, STONE=3, etc.)
+
+### Flying Controls
+
+**ENHANCED** - Flying mode has been improved for viewing flat Bible text and large-scale navigation.
+
+**Behavior:**
+- Speed: 50 blocks/sec (2.5x faster than original 20 blocks/sec)
+- Movement: Horizontal-only when using WASD (spectator-style)
+- Looking up/down does NOT affect WASD movement direction
+- Space bar: Moves straight up
+- Perfect for viewing flat text from above
+
+**How it works:**
+- `Tab` toggles flying mode on/off
+- While flying, WASD moves in XZ plane only (horizontal)
+- You can look straight down and still move forward/backward naturally
+- No accidental vertical movement when navigating
+
+**Implementation note:**
+In `get_motion_vector()` (main.c), flying mode now ignores the vertical look angle (`ry`) for WASD movement, only using horizontal rotation (`rx`). This allows players to look down at flat Bible text while moving horizontally with W/A/S/D.
+
+**Use case:**
+This is essential for `/bibleflat` rendering - fly up, look down at the ground-level text, and use W/S to "scroll" through the text naturally.
 
 ## Dependencies
 
@@ -228,19 +322,34 @@ When testing world changes:
 - Use `/offline [FILE]` command to use different save files
 - Schema is in `src/db.c` in `db_init()` function
 
-### Testing Voxel Text
+### Testing Voxel Text and Bible Rendering
 
 The voxel text system requires:
 1. Font file accessible at `../Fonts/unifont-17.0.03.hex`
-2. Initialized via `voxel_text_init()` in `main.c`
-3. Use builder-style block placement function for proper chunk updates
+2. Bible file accessible at `../Bible/kjv.txt` (for Bible commands)
+3. Both initialized via `voxel_text_init()` and `bible_init()` in `main.c`
+4. Use builder-style block placement function for proper chunk updates
 
 Example usage in code:
 ```c
+// Direct voxel text rendering
 voxel_text_render("Hello", x, y, z, STONE, 1, builder_block);
+
+// Bible rendering (vertical)
+bible_render_verse("Genesis", 1, 1, x, y, z, STONE, 60, builder_block);
+
+// Bible rendering (horizontal/flat)
+bible_render_chapter_flat("Psalm", 23, x, y, z, STONE, 60, 18, builder_block);
 ```
 
 The `builder_block` function (in `main.c`) ensures proper chunk invalidation and database updates.
+
+**Testing flat rendering:**
+1. Use `/bibleflat Psalm 23 0 200 0 3 50` to render a chapter horizontally
+2. Press Tab to enter flying mode
+3. Hold Space to fly up to Y=250+
+4. Look down with mouse
+5. Use W/S to scroll through the text (horizontal movement only)
 
 ## Common Gotchas
 
@@ -267,12 +376,41 @@ The `builder_block` function (in `main.c`) ensures proper chunk invalidation and
    - Width determined by data length: 32 chars = 8px, 64 chars = 16px
    - Handle UTF-8 encoding when parsing text input
 
-## Future Development Notes
+## Documentation
 
-According to `TODO.md`, planned features include:
-- Bible text rendering system (JSON input → voxel output)
-- Enhanced documentation for voxel text API
-- Performance optimizations for font loading
-- Additional text layout options (scaling, rotation)
+Comprehensive documentation is available in the `Docs/` directory:
 
-The project structure separates concerns well - keep game logic in `main.c`, rendering primitives in `cube.c`, world generation in `world.c`, and new features as separate modules like `voxel_text.c`.
+- `Docs/README.md` - Documentation index and quick start guide
+- `Docs/VoxelTextSystem.md` - Complete voxel text API reference
+- `Docs/BibleRenderingSystem.md` - Bible rendering guide with all 66 book names
+- `Docs/FlatBibleRendering.md` - Detailed guide to horizontal Bible layouts
+- `Docs/ImprovedFlyingControls.md` - Flying controls documentation
+- `Docs/LargeBibleRendering.md` - Strategies for rendering large Bible projects
+- `Docs/BibleRenderingPresets.md` - Pre-configured rendering setups
+
+## Project Structure
+
+The codebase separates concerns effectively:
+
+- `main.c` - Game loop, input handling, command parsing (largest file)
+- `cube.c` - Primitive rendering (cubes, rectangles)
+- `world.c` - Procedural terrain generation using Simplex noise
+- `db.c` - SQLite database operations (background thread)
+- `client.c` - Multiplayer networking
+- `voxel_text.c` - Voxel text rendering system (standalone module)
+- `bible.c` - Bible parsing and layout system (standalone module)
+- `matrix.c` - 3D math operations (translation, rotation, projection)
+- `map.c` - Hash map implementation for block storage
+- `item.c` - Block type definitions and textures
+
+**When adding features:** Create separate modules (like `voxel_text.c` and `bible.c`) rather than bloating `main.c`. Keep the modular structure.
+
+## Future Development Ideas
+
+Potential enhancements (see `TODO.md` for full list):
+- Glyph caching system for improved performance
+- Bible verse indexing for faster lookup
+- Multiple Bible translation support (NIV, ESV, etc.)
+- Text effects (shadows, outlines, multi-color)
+- In-game text editor UI
+- Save/load text placement presets

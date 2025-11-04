@@ -81,4 +81,15 @@ int bible_render_verse_range_flat(
     void (*block_func)(int x, int y, int z, int w)
 );
 
+// WORLD GENERATION
+// Generate the entire Bible in the world as part of world generation
+// This renders all 66 books, 1,189 chapters in a massive grid
+// Uses flat rendering for space efficiency
+// Returns 1 on success, 0 on failure
+int bible_generate_world(
+    int start_x, int start_y, int start_z,
+    int block_type,
+    void (*block_func)(int x, int y, int z, int w)
+);
+
 #endif

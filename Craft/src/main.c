@@ -1600,6 +1600,27 @@ void builder_block(int x, int y, int z, int w) {
     }
 }
 
+// Special builder for glowing Bible text - places block AND adds light
+void builder_block_glowing(int x, int y, int z, int w) {
+    if (y <= 0 || y >= 256) {
+        return;
+    }
+    if (is_destructable(get_block(x, y, z))) {
+        set_block(x, y, z, 0);
+    }
+    if (w) {
+        set_block(x, y, z, w);
+        // Also add light to make it glow
+        int p = chunked(x);
+        int q = chunked(z);
+        Chunk *chunk = find_chunk(p, q);
+        if (chunk) {
+            map_set(&chunk->lights, x, y, z, 15); // Max brightness
+            dirty_chunk(chunk);
+        }
+    }
+}
+
 int render_chunks(Attrib *attrib, Player *player) {
     int result = 0;
     State *s = &player->state;
@@ -1619,7 +1640,11 @@ int render_chunks(Attrib *attrib, Player *player) {
     glUniform1i(attrib->sampler, 0);
     glUniform1i(attrib->extra1, 2);
     glUniform1f(attrib->extra2, light);
+#if SHOW_FOG
     glUniform1f(attrib->extra3, g->render_radius * CHUNK_SIZE);
+#else
+    glUniform1f(attrib->extra3, 10000.0f);  // Very large distance = no fog
+#endif
     glUniform1i(attrib->extra4, g->ortho);
     glUniform1f(attrib->timer, time_of_day());
     for (int i = 0; i < g->chunk_count; i++) {
@@ -3065,6 +3090,23 @@ int main(int argc, char **argv) {
         if (!loaded) {
             s->y = highest_block(s->x, s->z) + 2;
         }
+
+        // GENERATE BIBLE IN WORLD (IF ENABLED) //
+#if GENERATE_BIBLE
+        static int bible_generated = 0;
+        if (!bible_generated && g->mode == MODE_OFFLINE) {
+            printf("Generating Bible in world...\n");
+            bible_generate_world(
+                BIBLE_START_X,
+                BIBLE_START_Y,
+                BIBLE_START_Z,
+                BIBLE_BLOCK_TYPE,
+                builder_block_glowing  // Use glowing builder for emissive text
+            );
+            bible_generated = 1;
+            printf("Bible generation complete! Fly to X=%d to explore.\n", BIBLE_START_X);
+        }
+#endif
 
         // BEGIN MAIN LOOP //
         double previous = glfwGetTime();
