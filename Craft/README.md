@@ -2,6 +2,8 @@
 
 Minecraft clone for Windows, Mac OS X and Linux. Just a few thousand lines of C using modern OpenGL (shaders). Online multiplayer support is included using a Python-based server.
 
+**Enhanced with advanced voxel text rendering capabilities!**
+
 http://www.michaelfogleman.com/craft/
 
 ![Screenshot](https://i.imgur.com/SH7wcas.png)
@@ -15,6 +17,15 @@ http://www.michaelfogleman.com/craft/
 * Day / night cycles and a textured sky dome.
 * World changes persisted in a sqlite3 database.
 * Multiplayer support!
+
+### Enhanced Features (Chunky Craft)
+
+* **Voxel Text Rendering**: Transform any text into 3D voxel blocks
+* **Multi-Language Support**: Render text in English, Chinese, Japanese, Korean, Russian, and more
+* **GNU Unifont Integration**: ~58,000 Unicode characters supported
+* **Bible Rendering**: Complete King James Version (31,102 verses) renderable in-game
+* **Word Wrapping**: Automatic text layout for long passages
+* **Scalable Text**: Render at 1x to 10x size
 
 ### Download
 
@@ -113,6 +124,8 @@ python server.py [HOST [PORT]]
 
 ### Chat Commands
 
+#### Navigation Commands
+
     /goto [NAME]
 
 Teleport to another user.
@@ -121,6 +134,16 @@ If NAME is unspecified, a random user is chosen.
     /list
 
 Display a list of connected users.
+
+    /pq P Q
+
+Teleport to the specified chunk.
+
+    /spawn
+
+Teleport back to the spawn point.
+
+#### Connection Commands
 
     /login NAME
 
@@ -141,13 +164,36 @@ FILE specifies the save file to use and defaults to "craft".
 
 Connect to the specified server.
 
-    /pq P Q
+#### Voxel Text Commands
 
-Teleport to the specified chunk.
+    /vtext X Y Z BLOCK_TYPE MESSAGE
 
-    /spawn
+Render text as voxel blocks in the world.
 
-Teleport back to the spawn point.
+Example: `/vtext 0 100 0 3 Hello World`
+
+    /vtext-jp X Y Z BLOCK_TYPE
+    /vtext-cn X Y Z BLOCK_TYPE
+    /vtext-kr X Y Z BLOCK_TYPE
+    /vtext-ru X Y Z BLOCK_TYPE
+
+Render demo text in Japanese, Chinese, Korean, or Russian.
+
+Example: `/vtext-jp 0 100 0 3`
+
+#### Bible Rendering Commands
+
+    /bible BOOK CHAPTER:VERSE X Y Z BLOCK_TYPE [WIDTH]
+
+Render Bible verses as voxel text.
+
+Examples:
+- Single verse: `/bible Genesis 1:1 0 100 0 3 60`
+- Verse range: `/bible John 3:16-17 0 100 0 3 50`
+- Full chapter: `/bible Psalm 23 0 200 0 3 60`
+- Multi-word books: `/bible 1 Kings 8:27 0 100 0 3 60`
+
+**See `../Docs/` for detailed documentation on these new features.**
 
 ### Screenshot
 
@@ -217,3 +263,34 @@ http://0fps.wordpress.com/2013/07/03/ambient-occlusion-for-minecraft-like-worlds
 * lodepng is used for loading PNG textures.
 * sqlite3 is used for saving the blocks added / removed by the user.
 * tinycthread is used for cross-platform threading.
+
+#### Chunky Craft Enhancements
+
+**Voxel Text System:**
+
+The voxel text rendering system converts any text into 3D voxel blocks using GNU Unifont, enabling multi-language text rendering directly in the game world.
+
+* GNU Unifont 17.0.03 (HEX format) provides ~58,000 Unicode glyphs
+* UTF-8 decoding for international text support
+* Automatic glyph sizing: 8×16 for Latin/Cyrillic, 16×16 for CJK
+* Scalable rendering (1x-10x) with configurable block types
+* Missing glyph handling with placeholder boxes
+
+**Bible Rendering System:**
+
+The Bible rendering system allows players to create monumental Scripture displays in voxel form.
+
+* Complete King James Version (31,102 verses, 66 books)
+* Tab-delimited text format for easy parsing
+* Word wrapping for long verses with configurable line width
+* Support for single verses, verse ranges, or entire chapters
+* Integration with voxel text for rendering output
+
+**Files:**
+* `src/voxel_text.c`, `src/voxel_text.h` - Voxel text rendering
+* `src/bible.c`, `src/bible.h` - Bible parsing and layout
+* `../Fonts/unifont-17.0.03.hex` - GNU Unifont data
+* `../Bible/kjv.txt` - King James Version text
+* `../Docs/` - Comprehensive documentation
+
+**For detailed documentation, see the `../Docs/` directory.**

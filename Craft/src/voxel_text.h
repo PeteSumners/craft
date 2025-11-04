@@ -22,4 +22,18 @@ int voxel_text_render(
     void (*block_func)(int x, int y, int z, int w)
 );
 
+// Render text flat/horizontal (readable from above)
+// Text advances along X axis, lines advance along Z axis
+// All text placed at same Y level (height)
+// Perfect for rendering large amounts of text readable from above
+// Returns the number of lines rendered
+int voxel_text_render_flat(
+    const char *text,
+    int x, int y, int z,
+    int block_type,
+    int max_width,      // characters per line (0 = no wrap)
+    int line_spacing,   // spacing between lines in voxels
+    void (*block_func)(int x, int y, int z, int w)
+);
+
 #endif

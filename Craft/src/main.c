@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 #include "auth.h"
 #include "client.h"
 #include "config.h"
@@ -19,6 +20,7 @@
 #include "tinycthread.h"
 #include "util.h"
 #include "voxel_text.h"
+#include "bible.h"
 #include "world.h"
 
 #define MAX_CHUNKS 8192
@@ -210,20 +212,11 @@ void get_motion_vector(int flying, int sz, int sx, float rx, float ry,
     }
     float strafe = atan2f(sz, sx);
     if (flying) {
-        float m = cosf(ry);
-        float y = sinf(ry);
-        if (sx) {
-            if (!sz) {
-                y = 0;
-            }
-            m = 1;
-        }
-        if (sz > 0) {
-            y = -y;
-        }
-        *vx = cosf(rx + strafe) * m;
-        *vy = y;
-        *vz = sinf(rx + strafe) * m;
+        // Horizontal flying mode: ignore vertical look angle (ry)
+        // Always move in XZ plane regardless of where you're looking
+        *vx = cosf(rx + strafe);
+        *vy = 0;  // No vertical movement from WASD
+        *vz = sinf(rx + strafe);
     }
     else {
         *vx = cosf(rx + strafe);
@@ -2197,6 +2190,224 @@ void parse_command(const char *buffer, int forward) {
             add_message("Usage: /vtext-ru X Y Z BLOCK_TYPE");
         }
     }
+    else if (strncmp(buffer, "/bible ", 7) == 0) {
+        // Bible rendering: /bible BOOK CHAPTER:VERSE X Y Z BLOCK_TYPE [WIDTH]
+        // Examples:
+        //   /bible Genesis 1:1 0 100 0 3 60
+        //   /bible Genesis 1:1-3 0 100 0 3 60
+        //   /bible Genesis 1 0 100 0 3 60
+
+        char book[256] = {0};
+        char chapter_verse[256] = {0};
+        int x, y, z, block_type, max_width = 60;
+
+        // Parse command - need to handle book names with spaces like "1 Kings" or "Song of Solomon"
+        const char *args = buffer + 7;
+
+        // Strategy: Find the verse reference (contains ':'), then skip past it to find coordinates
+        const char *coords_start = args;
+        const char *colon_pos = strchr(args, ':');
+
+        if (colon_pos) {
+            // Found a colon, so there's a verse reference
+            // Skip past the verse number(s) after the colon
+            coords_start = colon_pos + 1;
+
+            // Skip verse numbers and ranges (digits and dashes)
+            while (*coords_start && (isdigit(*coords_start) || *coords_start == '-')) {
+                coords_start++;
+            }
+
+            // Skip spaces before coordinates
+            while (*coords_start && isspace(*coords_start)) {
+                coords_start++;
+            }
+        } else {
+            // No colon means chapter-only reference
+            // Find where digits start (after book name), then skip past chapter number
+            while (*coords_start && !isdigit(*coords_start)) {
+                coords_start++;
+            }
+
+            // Skip chapter number
+            while (*coords_start && isdigit(*coords_start)) {
+                coords_start++;
+            }
+
+            // Skip spaces before coordinates
+            while (*coords_start && isspace(*coords_start)) {
+                coords_start++;
+            }
+        }
+
+        // Now coords_start should point to X coordinate
+        int n_parsed = sscanf(coords_start, "%d %d %d %d %d", &x, &y, &z, &block_type, &max_width);
+
+        if (n_parsed >= 4) {
+            // Extract book and chapter:verse
+            size_t book_len = coords_start - args;
+            strncpy(book, args, book_len);
+            book[book_len] = '\0';
+
+            // Trim trailing spaces from book
+            char *end = book + strlen(book) - 1;
+            while (end > book && isspace(*end)) {
+                *end = '\0';
+                end--;
+            }
+
+            // Parse chapter:verse from book string
+            char *last_space = strrchr(book, ' ');
+            if (last_space) {
+                strcpy(chapter_verse, last_space + 1);
+                *last_space = '\0'; // Terminate book name
+            }
+
+            // Now parse chapter:verse
+            int chapter = 0, verse_start = 0, verse_end = 0;
+
+            if (strchr(chapter_verse, ':')) {
+                // Has verse number(s)
+                if (strchr(chapter_verse, '-')) {
+                    // Range: "1:1-3"
+                    sscanf(chapter_verse, "%d:%d-%d", &chapter, &verse_start, &verse_end);
+
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Rendering %s %d:%d-%d at (%d,%d,%d)",
+                             book, chapter, verse_start, verse_end, x, y, z);
+                    add_message(msg);
+
+                    int lines = bible_render_verse_range(
+                        book, chapter, verse_start, verse_end,
+                        x, y, z, block_type, max_width, 5, builder_block
+                    );
+
+                    snprintf(msg, sizeof(msg), "Rendered %d lines", lines);
+                    add_message(msg);
+                } else {
+                    // Single verse: "1:1"
+                    sscanf(chapter_verse, "%d:%d", &chapter, &verse_start);
+
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Rendering %s %d:%d at (%d,%d,%d)",
+                             book, chapter, verse_start, x, y, z);
+                    add_message(msg);
+
+                    int lines = bible_render_verse(
+                        book, chapter, verse_start,
+                        x, y, z, block_type, max_width, builder_block
+                    );
+
+                    snprintf(msg, sizeof(msg), "Rendered %d lines", lines);
+                    add_message(msg);
+                }
+            } else {
+                // Whole chapter: "1"
+                chapter = atoi(chapter_verse);
+
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Rendering %s chapter %d at (%d,%d,%d)",
+                         book, chapter, x, y, z);
+                add_message(msg);
+                add_message("Warning: Full chapters can be very large!");
+
+                int lines = bible_render_chapter(
+                    book, chapter,
+                    x, y, z, block_type, max_width, 5, builder_block
+                );
+
+                snprintf(msg, sizeof(msg), "Rendered %d lines", lines);
+                add_message(msg);
+            }
+        } else {
+            add_message("Usage: /bible BOOK CHAPTER:VERSE X Y Z BLOCK_TYPE [WIDTH]");
+            add_message("Examples:");
+            add_message("  /bible Genesis 1:1 0 100 0 3 60");
+            add_message("  /bible Genesis 1:1-3 0 100 0 3 60");
+            add_message("  /bible Genesis 1 0 100 0 3 60");
+            add_message("  /bible 1 Kings 8:27 0 100 0 3 60");
+        }
+    }
+    else if (strncmp(buffer, "/bibleflat ", 11) == 0) {
+        // Bible flat rendering: /bibleflat BOOK CHAPTER X Y Z BLOCK_TYPE [WIDTH]
+        // Renders text horizontally (readable from above)
+        // Examples:
+        //   /bibleflat Genesis 1 0 200 0 3 60
+        //   /bibleflat Psalm 119 0 200 0 3 50
+
+        char book[256] = {0};
+        char chapter_verse[256] = {0};
+        int x, y, z, block_type, max_width = 60;
+
+        const char *args = buffer + 11;
+
+        // Strategy: Find chapter number, then coordinates
+        const char *coords_start = args;
+
+        // Find where digits start (after book name)
+        while (*coords_start && !isdigit(*coords_start)) {
+            coords_start++;
+        }
+
+        // Skip chapter number
+        while (*coords_start && isdigit(*coords_start)) {
+            coords_start++;
+        }
+
+        // Skip spaces before coordinates
+        while (*coords_start && isspace(*coords_start)) {
+            coords_start++;
+        }
+
+        // Now coords_start should point to X coordinate
+        int n_parsed = sscanf(coords_start, "%d %d %d %d %d", &x, &y, &z, &block_type, &max_width);
+
+        if (n_parsed >= 4) {
+            // Extract book and chapter
+            size_t book_len = coords_start - args;
+            strncpy(book, args, book_len);
+            book[book_len] = '\0';
+
+            // Trim trailing spaces from book
+            char *end = book + strlen(book) - 1;
+            while (end > book && isspace(*end)) {
+                *end = '\0';
+                end--;
+            }
+
+            // Parse chapter from book string
+            char *last_space = strrchr(book, ' ');
+            if (last_space) {
+                strcpy(chapter_verse, last_space + 1);
+                *last_space = '\0'; // Terminate book name
+            }
+
+            int chapter = atoi(chapter_verse);
+
+            if (chapter > 0) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Rendering FLAT: %s chapter %d at (%d,%d,%d)",
+                         book, chapter, x, y, z);
+                add_message(msg);
+                add_message("Text will be horizontal - fly up and look down!");
+
+                int lines = bible_render_chapter_flat(
+                    book, chapter,
+                    x, y, z, block_type, max_width, 5, builder_block
+                );
+
+                snprintf(msg, sizeof(msg), "Rendered %d lines (flat)", lines);
+                add_message(msg);
+            }
+        } else {
+            add_message("Usage: /bibleflat BOOK CHAPTER X Y Z BLOCK_TYPE [WIDTH]");
+            add_message("Examples:");
+            add_message("  /bibleflat Genesis 1 0 200 0 3 60");
+            add_message("  /bibleflat Psalm 119 0 200 0 3 50");
+            add_message("  /bibleflat John 1 0 200 0 3 55");
+            add_message("Text renders flat - readable from above!");
+        }
+    }
     else if (forward) {
         client_talk(buffer);
     }
@@ -2512,7 +2723,7 @@ void handle_movement(double dt) {
             }
         }
     }
-    float speed = g->flying ? 20 : 5;
+    float speed = g->flying ? 50 : 5;  // Much faster flying for viewing large Bible texts
     int estimate = roundf(sqrtf(
         powf(vx * speed, 2) +
         powf(vy * speed + ABS(dy) * 2, 2) +
@@ -2666,6 +2877,11 @@ int main(int argc, char **argv) {
     // Initialize voxel text system
     if (!voxel_text_init("../Fonts/unifont-17.0.03.hex")) {
         fprintf(stderr, "Warning: Could not initialize voxel text system\n");
+    }
+
+    // Initialize Bible system
+    if (!bible_init("../Bible/kjv.txt")) {
+        fprintf(stderr, "Warning: Could not initialize Bible system\n");
     }
 
     // WINDOW INITIALIZATION //
