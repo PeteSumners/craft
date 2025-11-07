@@ -8,7 +8,7 @@
 #define WINDOW_HEIGHT 768
 #define VSYNC 1
 #define SCROLL_THRESHOLD 0.1
-#define MAX_MESSAGES 4
+#define MAX_MESSAGES 20
 #define DB_PATH "craft.db"
 #define USE_CACHE 1
 #define DAY_LENGTH 600
@@ -37,6 +37,10 @@
 #define BIBLE_START_Y 75                 // Y level for Bible text - just above clouds
 #define BIBLE_START_Z 0                  // Starting Z coordinate for Bible scrolls
 #define BIBLE_BLOCK_TYPE 12              // Block type for Bible text (12 = LIGHT_STONE - bright white)
+#define BIBLE_SPAWN_PLATFORM_Y 177       // Y level for spawn platform (102 blocks above text at Y=75)
+#define BIBLE_SPAWN_Y 187                // Player spawn Y (10 blocks above platform, will drop down)
+#define BIBLE_SPAWN_X 0                  // Spawn X coordinate (at world origin, info area)
+#define BIBLE_SPAWN_Z 0                  // Spawn Z coordinate (at info area origin)
 
 // key bindings
 #define CRAFT_KEY_FORWARD 'W'

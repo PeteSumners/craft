@@ -1,5 +1,6 @@
 #include "bible.h"
 #include "voxel_text.h"
+#include "db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,11 @@
 
 static char *bible_file_path = NULL;
 static int bible_initialized = 0;
+
+// Forward declaration for landing platform generation (internal use)
+static void generate_landing_platform_internal(
+    int center_x, int center_z, int platform_y,
+    void (*block_func)(int x, int y, int z, int w));
 
 // Helper function to trim whitespace
 static void trim_whitespace(char *str) {
@@ -456,6 +462,9 @@ int bible_render_chapter_flat(
                     char full_text[1200];
                     snprintf(full_text, sizeof(full_text), "%d. %s", verse_num, verse_text);
 
+                    // Save position before rendering (for teleportation)
+                    db_insert_bible_position(book, chapter, verse_num, x, y, current_z);
+
                     // Render flat
                     int lines = voxel_text_render_flat(
                         full_text,
@@ -534,20 +543,30 @@ static const BibleBook bible_books[] = {
 
 // Render entire book as continuous scroll along Z-axis
 // Returns the Z extent (how far in Z the book extends)
+// start_chapter: which chapter to start from (1-based, use 1 for beginning)
 static int render_book_scroll(
     const char *book_name, int num_chapters,
     int x, int y, int z,
     int block_type,
     int width,
+    int start_chapter,
     void (*block_func)(int x, int y, int z, int w))
 {
     int current_z = z;
     int line_spacing = 5; // Space between verses
 
-    printf("Rendering %s (%d chapters)...\n", book_name, num_chapters);
+    if (start_chapter > 1) {
+        printf("Resuming %s from chapter %d of %d...\n", book_name, start_chapter, num_chapters);
+    } else {
+        printf("Rendering %s (%d chapters)...\n", book_name, num_chapters);
+    }
 
-    // Render each chapter sequentially
-    for (int chapter = 1; chapter <= num_chapters; chapter++) {
+    // Render each chapter sequentially (starting from start_chapter)
+    for (int chapter = start_chapter; chapter <= num_chapters; chapter++) {
+        // Save chapter start position (verse 0 = chapter start)
+        db_insert_bible_position(book_name, chapter, 0, x, y, current_z);
+        printf("  Saved position: %s %d:0 at (%d, %d, %d)\n", book_name, chapter, x, y, current_z);
+
         // Add chapter header
         char chapter_header[100];
         snprintf(chapter_header, sizeof(chapter_header), "=== %s %d ===", book_name, chapter);
@@ -577,6 +596,9 @@ static int render_book_scroll(
             printf("  Chapter %d: %d blocks in Z\n", chapter, z_extent);
             current_z += z_extent + 40; // Add chapter extent plus extra space between chapters
         }
+
+        // Save progress after each chapter (so we can resume mid-book)
+        // Note: This is done in the calling function bible_generate_world
     }
 
     // Return total Z extent used
@@ -593,26 +615,159 @@ int bible_generate_world(
         return 0;
     }
 
-    printf("\n");
-    printf("========================================\n");
-    printf("  GENERATING BIBLE IN WORLD\n");
-    printf("========================================\n");
-    printf("  Testing with Genesis and Exodus\n");
-    printf("  Layout: Books as scrolls along Z-axis\n");
-    printf("  Width: 40 characters\n");
-    printf("  Y-level: %d\n", start_y);
-    printf("========================================\n\n");
-
-    int current_x = start_x;
     int book_spacing = 600; // Space between books in X
     int text_width = 40;    // Character width for text
-    int num_books = 2;      // Just Genesis and Exodus for now
+    int num_books = BIBLE_BOOK_COUNT;  // All 66 books!
 
-    // Render each book
-    for (int i = 0; i < num_books; i++) {
+    // Check if we're resuming from a previous run
+    char progress_str[32] = {0};
+    int start_book_index = 0;
+    int resuming = 0;
+
+    if (db_get_metadata("bible_generation_progress", progress_str, sizeof(progress_str))) {
+        if (strcmp(progress_str, "complete") == 0) {
+            printf("Bible generation already complete!\n");
+            return (num_books * book_spacing); // Return full extent
+        } else {
+            // Parse book index (book-level tracking only for simplicity)
+            start_book_index = atoi(progress_str);
+
+            if (start_book_index >= 0 && start_book_index < num_books) {
+                resuming = 1;
+                printf("\n");
+                printf("========================================\n");
+                printf("  RESUMING BIBLE GENERATION\n");
+                printf("========================================\n");
+                printf("  Starting from book %d of %d: %s\n",
+                       start_book_index + 1, num_books, bible_books[start_book_index].name);
+                printf("  (Will re-render current book from beginning)\n");
+                printf("========================================\n\n");
+            }
+        }
+    }
+
+    if (!resuming) {
+        printf("\n");
+        printf("========================================\n");
+        printf("  GENERATING BIBLE IN WORLD\n");
+        printf("========================================\n");
+        printf("  Rendering all 66 books of the Bible\n");
+        printf("  Layout: Books as scrolls along Z-axis\n");
+        printf("  Width: 40 characters\n");
+        printf("  Y-level: %d\n", start_y);
+        printf("  This will take several minutes...\n");
+        printf("  TIP: You can stop and resume anytime!\n");
+        printf("========================================\n\n");
+
+        // FIRST: Generate info area at world origin (0, Y, 0)
+        printf("Step 1: Generating info area at world origin (0, 75, 0)...\n");
+
+        // Info area coordinates - center at world origin
+        // Text will be centered at X=0 (not starting at X=0)
+        int info_center_x = 0;       // World origin X (center of text)
+        int info_y = start_y;        // Same Y level as Bible text (75)
+        int info_z = 0;              // World origin Z
+
+        // Calculate text centering offset
+        // Longest line is 41 characters: "W/A/S/D - Move (horizontal in fly mode)"
+        // With scale=2 and 8-pixel chars: 41 * 16 = 656 blocks wide
+        // To center at X=0: start at -328, end at +328
+        int longest_line_chars = 41;
+        int blocks_per_char = 16;  // 8 pixels * scale 2
+        int text_width = longest_line_chars * blocks_per_char;  // 656 blocks
+        int text_start_x = info_center_x - (text_width / 2);    // -328
+
+        // Generate viewing platform at spawn/teleport altitude (centered at origin)
+        printf("  Creating viewing platform...\n");
+        int viewing_altitude = info_y + 102; // Y=177 (102 blocks above text)
+        for (int x = info_center_x - 7; x <= info_center_x + 7; x++) {
+            for (int z = info_z - 7; z <= info_z + 7; z++) {
+                block_func(x, viewing_altitude, z, 10); // GLASS platform at Y=177
+            }
+        }
+        printf("    Viewing platform: 225 blocks at Y=%d, centered at X=%d\n",
+               viewing_altitude, info_center_x);
+
+        // SECOND: Render help/navigation text (centered at origin)
+        printf("  Rendering help message...\n");
+
+        // Help text coordinates - offset to center the text
+        int help_x = text_start_x;   // Start at -328 to center text at X=0
+        int help_y = info_y;
+        int help_z = info_z;
+
+        // Render help text using voxel_text_render_flat
+        int current_help_z = help_z;
+        int line_spacing = 18;
+
+        // Welcome header
+        voxel_text_render_flat("=== BIBLE WORLD NAVIGATION ===",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 35;
+
+        voxel_text_render_flat("Commands:",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 24;
+
+        voxel_text_render_flat("/bgoto - Return to this info area",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += line_spacing;
+
+        voxel_text_render_flat("/bgoto Genesis - Go to a book",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += line_spacing;
+
+        voxel_text_render_flat("/bgoto John 3 - Go to a chapter",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += line_spacing;
+
+        voxel_text_render_flat("/bgoto John 3:16 - Go to a verse",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 30;
+
+        voxel_text_render_flat("Controls:",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 24;
+
+        voxel_text_render_flat("Tab - Toggle flying mode",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += line_spacing;
+
+        voxel_text_render_flat("Space - Move up while flying",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += line_spacing;
+
+        voxel_text_render_flat("W/A/S/D - Move (horizontal in fly mode)",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 30;
+
+        voxel_text_render_flat("- Genesis is 1000 blocks to the east ->",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+        current_help_z += 24;
+
+        voxel_text_render_flat("You are at world origin: (0, 75, 0)",
+                               help_x, help_y, current_help_z, block_type, 60, 2, block_func);
+
+        // Save info area CENTER position to database (chapter -1, verse 0 = info area marker)
+        // This is where we teleport to - the center of the text, not the start
+        db_insert_bible_position("INFO", -1, 0, info_center_x, info_y, info_z);
+
+        printf("  Help message complete!\n\n");
+        printf("Step 2: Generating Bible books...\n");
+    }
+
+    int current_x = start_x + (start_book_index * book_spacing);
+
+    // Render each book (starting from where we left off)
+    for (int i = start_book_index; i < num_books; i++) {
         printf("[%d/%d] Generating %s scroll at X=%d...\n",
                i + 1, BIBLE_BOOK_COUNT, bible_books[i].name, current_x);
 
+        // Save book start position (chapter 0, verse 0 = book start)
+        db_insert_bible_position(bible_books[i].name, 0, 0, current_x, start_y, start_z);
+        printf("  Saved book start: %s at (%d, %d, %d)\n", bible_books[i].name, current_x, start_y, start_z);
+
+        // Render the entire book from chapter 1
         int z_extent = render_book_scroll(
             bible_books[i].name,
             bible_books[i].chapters,
@@ -621,26 +776,268 @@ int bible_generate_world(
             start_z,
             block_type,
             text_width,
+            1, // Always start from chapter 1
             block_func
         );
 
-        printf("    %s: %d blocks in Z-axis\n\n", bible_books[i].name, z_extent);
+        printf("    %s: %d blocks in Z-axis\n", bible_books[i].name, z_extent);
+
+        // Save progress after completing the entire book
+        char progress_buf[16];
+        snprintf(progress_buf, sizeof(progress_buf), "%d", i + 1);
+        db_set_metadata("bible_generation_progress", progress_buf);
+        db_commit_sync();  // Force immediate synchronous commit
+
+        printf("  Progress saved: %d/%d books complete\n\n", i + 1, num_books);
 
         // Move to next book position
         current_x += book_spacing;
     }
 
+    // Mark generation as complete
+    db_set_metadata("bible_generation_progress", "complete");
+    db_commit_sync();  // Force immediate commit
+
     printf("\n");
     printf("========================================\n");
     printf("  BIBLE WORLD GENERATION COMPLETE!\n");
     printf("========================================\n");
-    printf("  Generated %d books at X=%d to X=%d\n", num_books, start_x, current_x - book_spacing);
-    printf("  Genesis at X=%d, Exodus at X=%d\n", start_x, start_x + book_spacing);
-    printf("  Navigate:\n");
-    printf("    - Fly along X-axis to switch books\n");
-    printf("    - Fly along Z-axis to read through book\n");
-    printf("    - Commands: Tab (fly), Space (up), W/S (forward/back)\n");
+    printf("  Generated all %d books!\n", num_books);
+    printf("  X-axis range: %d to %d\n", start_x, start_x + (num_books * book_spacing));
+    printf("  Genesis at X=%d, Revelation at X=%d\n", start_x, start_x + ((num_books - 1) * book_spacing));
+    printf("\n");
+    printf("  Navigation:\n");
+    printf("    /bgoto               - Return to info area\n");
+    printf("    /bgoto Genesis       - Go to book\n");
+    printf("    /bgoto John 3        - Go to chapter\n");
+    printf("    /bgoto John 3:16     - Go to exact verse\n");
+    printf("\n");
+    printf("  Flight controls:\n");
+    printf("    Tab   - Toggle flying\n");
+    printf("    Space - Move up\n");
+    printf("    W/S   - Forward/back (horizontal only in fly mode)\n");
     printf("========================================\n\n");
 
-    return 1;
+    // Return the total X extent (how many books × spacing)
+    return num_books * book_spacing;
+}
+
+// Internal function - Generate a small glass landing platform at a specific position
+// Creates a 9×9 platform centered at (x, z) at the given Y level
+static void generate_landing_platform_internal(
+    int center_x, int center_z, int platform_y,
+    void (*block_func)(int x, int y, int z, int w))
+{
+    int glass_block_type = 10; // GLASS
+    int platform_size = 9; // 9×9 platform
+    int half_size = platform_size / 2;
+
+    for (int dx = -half_size; dx <= half_size; dx++) {
+        for (int dz = -half_size; dz <= half_size; dz++) {
+            block_func(center_x + dx, platform_y, center_z + dz, glass_block_type);
+        }
+    }
+}
+
+// Public wrapper - Generate a landing platform (called by bgoto)
+void bible_generate_landing_platform(
+    int center_x, int center_z, int platform_y,
+    void (*block_func)(int x, int y, int z, int w))
+{
+    generate_landing_platform_internal(center_x, center_z, platform_y, block_func);
+}
+
+// Generate single spawn platform only
+void bible_generate_glass_platforms(
+    int start_x, int start_y, int start_z,
+    int platform_y,
+    void (*block_func)(int x, int y, int z, int w))
+{
+    printf("\n");
+    printf("========================================\n");
+    printf("  GENERATING SPAWN PLATFORM\n");
+    printf("========================================\n");
+    printf("  Position: X=%d, Y=%d, Z=%d\n", start_x, platform_y, start_z);
+    printf("  Size: 11x11 blocks (X: %d to %d, Z: %d to %d)\n",
+           start_x - 5, start_x + 5, start_z - 5, start_z + 5);
+    printf("  Block type: 3 (STONE - visible for testing)\n");
+    printf("========================================\n\n");
+
+    // Generate small 11×11 spawn platform
+    // Using STONE (3) temporarily for visibility - change to GLASS (10) later
+    int platform_block_type = 3; // STONE - visible for testing
+    int blocks_placed = 0;
+
+    printf("Placing blocks...\n");
+    for (int x = start_x - 5; x <= start_x + 5; x++) {
+        for (int z = start_z - 5; z <= start_z + 5; z++) {
+            // Place the block using provided function
+            block_func(x, platform_y, z, platform_block_type);
+            blocks_placed++;
+
+            // Debug: print first few blocks
+            if (blocks_placed <= 3) {
+                printf("  Placed block at (%d, %d, %d)\n", x, platform_y, z);
+            }
+        }
+    }
+
+    printf("Spawn platform complete! Placed %d blocks.\n", blocks_placed);
+    printf("Note: Platform will be visible after restart/reload.\n");
+    printf("========================================\n\n");
+}
+
+// Render help message at spawn explaining controls
+void bible_render_help_message(
+    int x, int y, int z,
+    int block_type,
+    void (*block_func)(int x, int y, int z, int w))
+{
+    printf("\n");
+    printf("========================================\n");
+    printf("  RENDERING HELP MESSAGE AT SPAWN\n");
+    printf("========================================\n");
+    printf("  Position: (%d, %d, %d)\n", x, y, z);
+    printf("========================================\n\n");
+
+    // Render help text using voxel_text_render_flat (horizontal layout)
+    int current_z = z;
+    int line_spacing = 22;
+
+    // Welcome header
+    voxel_text_render_flat("=== WELCOME TO THE BIBLE WORLD ===",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += 40;
+
+    // Navigation section
+    voxel_text_render_flat("NAVIGATION:",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("/bgoto - Return to this info area",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("/bgoto Genesis - Go to a book",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("/bgoto John 3 - Go to a chapter",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("/bgoto John 3:16 - Go to a verse",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += 30;
+
+    // Controls section
+    voxel_text_render_flat("CONTROLS:",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("Tab - Toggle flying mode",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("W/A/S/D - Move horizontally (flying)",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("Space - Move up",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("Mouse - Look around",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += 30;
+
+    // Tips section
+    voxel_text_render_flat("TIPS:",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("- You are on a glass platform above the Bible",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("- Look down to read the text below",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("- Genesis starts at X=1000",
+                           x, y, current_z, block_type, 60, 2, block_func);
+    current_z += line_spacing;
+
+    voxel_text_render_flat("- Use /bgoto to quickly navigate",
+                           x, y, current_z, block_type, 60, 2, block_func);
+
+    printf("Help message rendered successfully!\n\n");
+}
+
+// Get the number of chapters in a book
+// Returns chapter count, or 0 if book not found
+int bible_get_chapter_count(const char *book) {
+    if (!book) return 0;
+
+    // Search through the bible_books array
+    for (int i = 0; i < BIBLE_BOOK_COUNT; i++) {
+#ifdef _WIN32
+        if (_stricmp(book, bible_books[i].name) == 0) {
+#else
+        if (strcasecmp(book, bible_books[i].name) == 0) {
+#endif
+            return bible_books[i].chapters;
+        }
+    }
+
+    // Book not found
+    return 0;
+}
+
+// Get the number of verses in a specific chapter
+// Returns verse count, or 0 if book/chapter not found
+int bible_get_verse_count(const char *book, int chapter) {
+    if (!bible_initialized || !book || chapter < 1) {
+        return 0;
+    }
+
+    // Validate chapter exists
+    int chapter_count = bible_get_chapter_count(book);
+    if (chapter > chapter_count) {
+        return 0;
+    }
+
+    // Open Bible file and count verses in this chapter
+    FILE *f = fopen(bible_file_path, "r");
+    if (!f) {
+        return 0;
+    }
+
+    char line[4096];
+    char search_prefix[256];
+    snprintf(search_prefix, sizeof(search_prefix), "%s %d:", book, chapter);
+
+    int verse_count = 0;
+    int max_verse = 0;
+
+    // Skip first 2 header lines
+    fgets(line, sizeof(line), f);
+    fgets(line, sizeof(line), f);
+
+    // Count verses matching "Book Chapter:*"
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, search_prefix, strlen(search_prefix)) == 0) {
+            // Found a verse in this chapter
+            // Extract verse number
+            const char *verse_str = line + strlen(search_prefix);
+            int verse_num = atoi(verse_str);
+            if (verse_num > max_verse) {
+                max_verse = verse_num;
+            }
+            verse_count++;
+        }
+    }
+
+    fclose(f);
+    return max_verse; // Return highest verse number found
 }

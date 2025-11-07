@@ -1,0 +1,22 @@
+# Cppcheck project configuration
+# Copy this to Craft/.cppcheck for IDE integration
+
+[includes]
+../Craft/src
+../Craft/deps/glew/include
+../Craft/deps/glfw/include
+../Craft/deps/lodepng
+../Craft/deps/noise
+../Craft/deps/sqlite
+../Craft/deps/tinycthread
+
+[defines]
+_WIN32
+GLEW_STATIC
+
+[undefines]
+
+[suppress]
+missingIncludeSystem
+unusedFunction
+*:deps/*

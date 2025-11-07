@@ -131,6 +131,7 @@ typedef struct {
     int player_count;
     int typing;
     char typing_buffer[MAX_TEXT_LENGTH];
+    int typing_cursor;  // Cursor position in typing_buffer
     int message_index;
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
@@ -2433,6 +2434,253 @@ void parse_command(const char *buffer, int forward) {
             add_message("Text renders flat - readable from above!");
         }
     }
+    else if (strncmp(buffer, "/bgoto", 6) == 0) {
+        // Bible navigation: /bgoto [BOOK [CHAPTER[:VERSE]]]
+        // Examples: /bgoto, /bgoto Genesis, /bgoto Genesis 1, /bgoto Genesis 1:3
+
+        printf("DEBUG: /bgoto command received. Buffer: '%s'\n", buffer);
+        printf("DEBUG: Buffer length: %zu\n", strlen(buffer));
+
+        // Bible book list (must match bible.c)
+        const char *bible_books[] = {
+            "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
+            "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
+            "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra",
+            "Nehemiah", "Esther", "Job", "Psalm", "Proverbs",
+            "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations",
+            "Ezekiel", "Daniel", "Hosea", "Joel", "Amos",
+            "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk",
+            "Zephaniah", "Haggai", "Zechariah", "Malachi",
+            "Matthew", "Mark", "Luke", "John", "Acts",
+            "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians",
+            "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy",
+            "2 Timothy", "Titus", "Philemon", "Hebrews", "James",
+            "1 Peter", "2 Peter", "1 John", "2 John", "3 John",
+            "Jude", "Revelation"
+        };
+        int num_books = 66;
+        int book_spacing = 600;
+
+        // Check if there are no arguments after "/bgoto"
+        // Strip leading/trailing spaces from args
+        char args[256] = {0};
+        if (strlen(buffer) > 6) {
+            strncpy(args, buffer + 6, sizeof(args) - 1);
+            // Trim leading whitespace
+            char *start = args;
+            while (*start == ' ' || *start == '\t') start++;
+            if (start != args) {
+                memmove(args, start, strlen(start) + 1);
+            }
+            // Trim trailing whitespace
+            char *end = args + strlen(args) - 1;
+            while (end > args && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
+                *end = '\0';
+                end--;
+            }
+        }
+
+        // If no arguments, teleport to info area
+        if (strlen(args) == 0) {
+            State *s = &g->players->state;
+
+            printf("DEBUG: /bgoto with no args - teleporting to info area\n");
+
+            // Try to get INFO position from database
+            int pos_x = 0, pos_y = 0, pos_z = 0;
+            int found_position = db_get_bible_position("INFO", -1, 0, &pos_x, &pos_y, &pos_z);
+
+            if (found_position) {
+                // Use precise position from database
+                s->x = pos_x;
+                s->y = pos_y + 102;  // 102 blocks above the text (viewing altitude)
+                s->z = pos_z;        // Right at the start of text
+                s->rx = 0;           // Look forward (along +Z)
+                s->ry = -45;         // Look down at text far below
+
+                char coord_msg[256];
+                snprintf(coord_msg, sizeof(coord_msg),
+                         "Teleported to info area: (%d, %d, %d)",
+                         (int)s->x, (int)s->y, (int)s->z);
+                add_message(coord_msg);
+                add_message("Enable flying (Tab) to navigate");
+            } else {
+                // Fallback to calculated position (if Bible not yet generated)
+                s->x = 0;                      // World origin
+                s->y = BIBLE_START_Y + 102;    // 102 blocks above Bible text
+                s->z = 0;                      // Right at origin
+                s->rx = 0;
+                s->ry = -45;                   // Look down at text
+
+                char coord_msg[256];
+                snprintf(coord_msg, sizeof(coord_msg),
+                         "Teleported to info area: (%d, %d, %d) [estimated]",
+                         (int)s->x, (int)s->y, (int)s->z);
+                add_message(coord_msg);
+                add_message("Enable flying (Tab) to navigate");
+            }
+            return;
+        }
+
+        // Parse arguments: BOOK [CHAPTER[:VERSE]]
+        // This is tricky because book names can contain spaces AND numbers
+        // Examples: "Genesis 1", "1 Thessalonians 5:2", "Song of Solomon 3"
+        printf("DEBUG: /bgoto with args: '%s'\n", args);
+
+        char book[128] = {0};
+        int chapter = 0;
+        int verse = 0;
+        int book_index = -1;
+
+        // Strategy: Try to match each known book name from the list
+        // Check if args starts with the book name (case-insensitive)
+        for (int i = 0; i < num_books; i++) {
+            size_t book_name_len = strlen(bible_books[i]);
+
+            // Check if args starts with this book name (case-insensitive)
+#ifdef _WIN32
+            int matches = (_strnicmp(args, bible_books[i], book_name_len) == 0);
+#else
+            int matches = (strncasecmp(args, bible_books[i], book_name_len) == 0);
+#endif
+
+            if (matches) {
+                // Check that it's followed by end-of-string, space, or digit
+                char next_char = args[book_name_len];
+                if (next_char == '\0' || next_char == ' ' || isdigit(next_char)) {
+                    // Found the book!
+                    book_index = i;
+                    strncpy(book, bible_books[i], sizeof(book) - 1);
+
+                    // Extract chapter/verse from the rest
+                    const char *remainder = args + book_name_len;
+                    // Skip whitespace
+                    while (*remainder == ' ') remainder++;
+
+                    // Parse chapter:verse
+                    if (*remainder != '\0') {
+                        if (strchr(remainder, ':')) {
+                            sscanf(remainder, "%d:%d", &chapter, &verse);
+                        } else {
+                            chapter = atoi(remainder);
+                        }
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        if (book_index >= 0) {
+            // Validate chapter and verse
+            int chapter_count = bible_get_chapter_count(bible_books[book_index]);
+
+            // Check if chapter is valid
+            if (chapter > chapter_count) {
+                char error_msg[256];
+                if (chapter_count == 1) {
+                    snprintf(error_msg, sizeof(error_msg),
+                             "ERROR: %s has only 1 chapter (you requested chapter %d)",
+                             bible_books[book_index], chapter);
+                } else {
+                    snprintf(error_msg, sizeof(error_msg),
+                             "ERROR: %s has only %d chapters (you requested chapter %d)",
+                             bible_books[book_index], chapter_count, chapter);
+                }
+                add_message(error_msg);
+                return;
+            }
+
+            // Check if verse is valid (only if verse was specified)
+            if (chapter > 0 && verse > 0) {
+                int verse_count = bible_get_verse_count(bible_books[book_index], chapter);
+                if (verse_count > 0 && verse > verse_count) {
+                    char error_msg[256];
+                    if (verse_count == 1) {
+                        snprintf(error_msg, sizeof(error_msg),
+                                 "ERROR: %s %d has only 1 verse (you requested verse %d)",
+                                 bible_books[book_index], chapter, verse);
+                    } else {
+                        snprintf(error_msg, sizeof(error_msg),
+                                 "ERROR: %s %d has only %d verses (you requested verse %d)",
+                                 bible_books[book_index], chapter, verse_count, verse);
+                    }
+                    add_message(error_msg);
+                    return;
+                }
+            }
+
+            // Validation passed - proceed with teleport
+            State *s = &g->players->state;
+            int pos_x = 0, pos_y = 0, pos_z = 0;
+            int found_position = 0;
+
+            // Try to get precise position from database
+            if (verse > 0) {
+                // Look up exact verse position
+                found_position = db_get_bible_position(bible_books[book_index], chapter, verse, &pos_x, &pos_y, &pos_z);
+                printf("Looking up %s %d:%d - %s\n", bible_books[book_index], chapter, verse,
+                       found_position ? "FOUND" : "NOT FOUND");
+            } else if (chapter > 0) {
+                // Look up chapter start (verse 0)
+                found_position = db_get_bible_position(bible_books[book_index], chapter, 0, &pos_x, &pos_y, &pos_z);
+                printf("Looking up %s %d:0 - %s\n", bible_books[book_index], chapter,
+                       found_position ? "FOUND" : "NOT FOUND");
+            } else {
+                // Look up book start (chapter 0, verse 0)
+                found_position = db_get_bible_position(bible_books[book_index], 0, 0, &pos_x, &pos_y, &pos_z);
+                printf("Looking up %s 0:0 - %s\n", bible_books[book_index],
+                       found_position ? "FOUND" : "NOT FOUND");
+            }
+
+            if (found_position) {
+                // Use precise position from database
+                printf("Using precise position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
+                s->x = pos_x;
+                s->y = pos_y + 102;         // 102 blocks above the text (viewing altitude)
+                s->z = pos_z;               // Right at the start of the text
+            } else {
+                // Fallback to estimated position (Bible not yet generated)
+                s->x = BIBLE_START_X + (book_index * book_spacing);
+                int z_offset = 0;
+                if (chapter > 0) {
+                    z_offset = (chapter - 1) * 360;
+                    if (verse > 0) {
+                        z_offset += (verse - 1) * 18;
+                    }
+                }
+                s->y = BIBLE_START_Y + 102; // 102 blocks above Bible text
+                s->z = BIBLE_START_Z + z_offset;  // Right at the start
+
+                printf("Using estimated position: (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
+            }
+
+            s->rx = 0;   // Look south (along +Z axis, toward text)
+            s->ry = -45; // Look down at text far below
+
+            char msg[256];
+            char coord_msg[256];
+            if (verse > 0) {
+                snprintf(msg, sizeof(msg), "Teleported to %s %d:%d",
+                         bible_books[book_index], chapter, verse);
+            } else if (chapter > 0) {
+                snprintf(msg, sizeof(msg), "Teleported to %s chapter %d",
+                         bible_books[book_index], chapter);
+            } else {
+                snprintf(msg, sizeof(msg), "Teleported to %s",
+                         bible_books[book_index]);
+            }
+            add_message(msg);
+
+            snprintf(coord_msg, sizeof(coord_msg), "Position: (%d, %d, %d)%s",
+                     (int)s->x, (int)s->y, (int)s->z,
+                     found_position ? "" : " [estimated]");
+            add_message(coord_msg);
+            add_message("Enable flying (Tab) to navigate");
+        } else {
+            add_message("Book not found! Use /bgoto to see all books.");
+        }
+    }
     else if (forward) {
         client_talk(buffer);
     }
@@ -2494,9 +2742,47 @@ void on_key(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_BACKSPACE) {
         if (g->typing) {
             int n = strlen(g->typing_buffer);
-            if (n > 0) {
-                g->typing_buffer[n - 1] = '\0';
+            if (g->typing_cursor > 0 && n > 0) {
+                // Delete character before cursor
+                memmove(&g->typing_buffer[g->typing_cursor - 1],
+                        &g->typing_buffer[g->typing_cursor],
+                        n - g->typing_cursor + 1);
+                g->typing_cursor--;
             }
+        }
+    }
+    if (key == GLFW_KEY_DELETE) {
+        if (g->typing) {
+            int n = strlen(g->typing_buffer);
+            if (g->typing_cursor < n) {
+                // Delete character at cursor
+                memmove(&g->typing_buffer[g->typing_cursor],
+                        &g->typing_buffer[g->typing_cursor + 1],
+                        n - g->typing_cursor);
+            }
+        }
+    }
+    if (key == GLFW_KEY_LEFT) {
+        if (g->typing && g->typing_cursor > 0) {
+            g->typing_cursor--;
+        }
+    }
+    if (key == GLFW_KEY_RIGHT) {
+        if (g->typing) {
+            int n = strlen(g->typing_buffer);
+            if (g->typing_cursor < n) {
+                g->typing_cursor++;
+            }
+        }
+    }
+    if (key == GLFW_KEY_HOME) {
+        if (g->typing) {
+            g->typing_cursor = 0;
+        }
+    }
+    if (key == GLFW_KEY_END) {
+        if (g->typing) {
+            g->typing_cursor = strlen(g->typing_buffer);
         }
     }
     if (action != GLFW_PRESS) {
@@ -2515,8 +2801,12 @@ void on_key(GLFWwindow *window, int key, int scancode, int action, int mods) {
             if (mods & GLFW_MOD_SHIFT) {
                 int n = strlen(g->typing_buffer);
                 if (n < MAX_TEXT_LENGTH - 1) {
-                    g->typing_buffer[n] = '\r';
-                    g->typing_buffer[n + 1] = '\0';
+                    // Insert newline at cursor position
+                    memmove(&g->typing_buffer[g->typing_cursor + 1],
+                            &g->typing_buffer[g->typing_cursor],
+                            n - g->typing_cursor + 1);
+                    g->typing_buffer[g->typing_cursor] = '\r';
+                    g->typing_cursor++;
                 }
             }
             else {
@@ -2549,8 +2839,20 @@ void on_key(GLFWwindow *window, int key, int scancode, int action, int mods) {
         const char *buffer = glfwGetClipboardString(window);
         if (g->typing) {
             g->suppress_char = 1;
-            strncat(g->typing_buffer, buffer,
-                MAX_TEXT_LENGTH - strlen(g->typing_buffer) - 1);
+            // Insert clipboard text at cursor position
+            int n = strlen(g->typing_buffer);
+            int paste_len = strlen(buffer);
+            int available = MAX_TEXT_LENGTH - n - 1;
+            if (paste_len > available) {
+                paste_len = available;
+            }
+            if (paste_len > 0) {
+                memmove(&g->typing_buffer[g->typing_cursor + paste_len],
+                        &g->typing_buffer[g->typing_cursor],
+                        n - g->typing_cursor + 1);
+                memcpy(&g->typing_buffer[g->typing_cursor], buffer, paste_len);
+                g->typing_cursor += paste_len;
+            }
         }
         else {
             parse_command(buffer, 0);
@@ -2594,8 +2896,12 @@ void on_char(GLFWwindow *window, unsigned int u) {
             char c = (char)u;
             int n = strlen(g->typing_buffer);
             if (n < MAX_TEXT_LENGTH - 1) {
-                g->typing_buffer[n] = c;
-                g->typing_buffer[n + 1] = '\0';
+                // Insert character at cursor position
+                memmove(&g->typing_buffer[g->typing_cursor + 1],
+                        &g->typing_buffer[g->typing_cursor],
+                        n - g->typing_cursor + 1);
+                g->typing_buffer[g->typing_cursor] = c;
+                g->typing_cursor++;
             }
         }
     }
@@ -2603,16 +2909,19 @@ void on_char(GLFWwindow *window, unsigned int u) {
         if (u == CRAFT_KEY_CHAT) {
             g->typing = 1;
             g->typing_buffer[0] = '\0';
+            g->typing_cursor = 0;
         }
         if (u == CRAFT_KEY_COMMAND) {
             g->typing = 1;
             g->typing_buffer[0] = '/';
             g->typing_buffer[1] = '\0';
+            g->typing_cursor = 1;
         }
         if (u == CRAFT_KEY_SIGN) {
             g->typing = 1;
             g->typing_buffer[0] = CRAFT_KEY_SIGN;
             g->typing_buffer[1] = '\0';
+            g->typing_cursor = 1;
         }
     }
 }
@@ -3088,23 +3397,59 @@ int main(int argc, char **argv) {
         int loaded = db_load_state(&s->x, &s->y, &s->z, &s->rx, &s->ry);
         force_chunks(me);
         if (!loaded) {
-            s->y = highest_block(s->x, s->z) + 2;
+            // New game - spawn directly on platform
+            s->x = BIBLE_SPAWN_X;
+            s->y = BIBLE_SPAWN_PLATFORM_Y + 1;  // Stand on platform
+            s->z = BIBLE_SPAWN_Z;
+            s->rx = 0;   // Look forward (along Z axis)
+            s->ry = -20; // Look down to see help message
         }
 
         // GENERATE BIBLE IN WORLD (IF ENABLED) //
 #if GENERATE_BIBLE
-        static int bible_generated = 0;
-        if (!bible_generated && g->mode == MODE_OFFLINE) {
-            printf("Generating Bible in world...\n");
-            bible_generate_world(
-                BIBLE_START_X,
-                BIBLE_START_Y,
-                BIBLE_START_Z,
-                BIBLE_BLOCK_TYPE,
-                builder_block_glowing  // Use glowing builder for emissive text
-            );
-            bible_generated = 1;
-            printf("Bible generation complete! Fly to X=%d to explore.\n", BIBLE_START_X);
+        if (g->mode == MODE_OFFLINE && get_db_enabled()) {
+            char progress_flag[16] = {0};
+            char spawn_init_flag[16] = {0};
+
+            // Check if spawn area (platform + help) has been initialized
+            int spawn_initialized = db_get_metadata("bible_spawn_initialized", spawn_init_flag, sizeof(spawn_init_flag));
+
+            // Spawn platform and help message are now generated as part of bible_generate_world
+
+            // Check Bible generation progress
+            int generation_complete = 0;
+            if (db_get_metadata("bible_generation_progress", progress_flag, sizeof(progress_flag))) {
+                if (strcmp(progress_flag, "complete") == 0) {
+                    generation_complete = 1;
+                }
+            }
+
+            if (!generation_complete) {
+                // Generate or resume Bible text generation
+                int x_extent = bible_generate_world(
+                    BIBLE_START_X,
+                    BIBLE_START_Y,
+                    BIBLE_START_Z,
+                    BIBLE_BLOCK_TYPE,
+                    builder_block_glowing  // Use glowing builder for emissive text
+                );
+
+                // If we just completed, show completion message
+                if (db_get_metadata("bible_generation_progress", progress_flag, sizeof(progress_flag))) {
+                    if (strcmp(progress_flag, "complete") == 0) {
+                        printf("\n");
+                        printf("========================================\n");
+                        printf("  ALL SYSTEMS READY!\n");
+                        printf("========================================\n");
+                        printf("  Spawn: X=%d, Y=%d, Z=%d\n", BIBLE_SPAWN_X, BIBLE_SPAWN_Y, BIBLE_SPAWN_Z);
+                        printf("  You are 300 blocks above the Bible text\n");
+                        printf("  Read the help message on the platform!\n");
+                        printf("  Type /bgoto to return to spawn anytime\n");
+                        printf("  Press Tab to enable flying for navigation\n");
+                        printf("========================================\n\n");
+                    }
+                }
+            }
         }
 #endif
 
@@ -3218,7 +3563,14 @@ int main(int argc, char **argv) {
                 }
             }
             if (g->typing) {
-                snprintf(text_buffer, 1024, "> %s", g->typing_buffer);
+                // Insert cursor character at cursor position
+                char temp_buffer[MAX_TEXT_LENGTH + 2];
+                int len = strlen(g->typing_buffer);
+                strncpy(temp_buffer, g->typing_buffer, g->typing_cursor);
+                temp_buffer[g->typing_cursor] = '|';
+                strcpy(temp_buffer + g->typing_cursor + 1,
+                       g->typing_buffer + g->typing_cursor);
+                snprintf(text_buffer, 1024, "> %s", temp_buffer);
                 render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
                 ty -= ts * 2;
             }

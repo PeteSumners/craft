@@ -10,6 +10,7 @@ int get_db_enabled();
 int db_init(char *path);
 void db_close();
 void db_commit();
+void db_commit_sync();  // Force immediate synchronous commit
 void db_auth_set(char *username, char *identity_token);
 int db_auth_select(char *username);
 void db_auth_select_none();
@@ -33,6 +34,10 @@ void db_load_lights(Map *map, int p, int q);
 void db_load_signs(SignList *list, int p, int q);
 int db_get_key(int p, int q);
 void db_set_key(int p, int q, int key);
+int db_get_metadata(const char *key, char *value, int value_length);
+void db_set_metadata(const char *key, const char *value);
+void db_insert_bible_position(const char *book, int chapter, int verse, int x, int y, int z);
+int db_get_bible_position(const char *book, int chapter, int verse, int *x, int *y, int *z);
 void db_worker_start();
 void db_worker_stop();
 int db_worker_run(void *arg);

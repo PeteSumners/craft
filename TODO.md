@@ -1,19 +1,20 @@
 # Chunky Craft - Project TODO
 
-## Current Status (v1.0 - COMPLETED!)
+## Current Status (v1.2 - World Generation + Navigation)
 ✅ Voxel text rendering system implemented
 ✅ Multi-language support (English, Chinese, Japanese, Korean, Russian)
 ✅ GNU Unifont integration (58,000+ characters)
-✅ Commands: `/vtext` and language presets
-✅ **Bible rendering system implemented**
-✅ **Complete KJV Bible support (31,102 verses)**
-✅ **Comprehensive documentation created**
-✅ **Code cleanup and error handling**
-✅ **README updates**
+✅ Bible rendering system (31,102 verses)
+✅ **Bible world generation (all 66 books as persistent world)**
+✅ **Database position tracking (precise verse coordinates)**
+✅ **Teleportation system (`/bgoto` command)**
+✅ **One-time generation (persists across sessions)**
+✅ **Flat Bible rendering (horizontal layout for large texts)**
+✅ **Enhanced flying controls (spectator-style horizontal movement)**
 
 ---
 
-## Completed (Latest Session)
+## Completed (Latest Session - v1.2)
 
 ### 1. Bible Rendering System ✅
 - ✅ Analyzed KJV text file format (tab-delimited)
@@ -49,29 +50,62 @@
 - ✅ Added Bible rendering examples
 - ✅ Added technical implementation details
 
+### 5. Bible World Generation System ✅
+- ✅ Implemented `bible_generate_world()` function
+- ✅ All 66 books rendered as scrolls along Z-axis
+- ✅ Books separated by 600 blocks on X-axis
+- ✅ Glowing text using LIGHT_STONE blocks (brightness 15)
+- ✅ Flatlands mode with optimized settings
+- ✅ One-time generation with database flag
+
+### 6. Database Position Tracking ✅
+- ✅ Added `bible_position` table to database schema
+- ✅ Track exact coordinates for every verse (31,102+ positions)
+- ✅ Track chapter starts and book starts
+- ✅ Functions: `db_insert_bible_position()`, `db_get_bible_position()`
+- ✅ Thread-safe database operations
+
+### 7. Bible Navigation System ✅
+- ✅ Implemented `/bgoto` command (book/chapter/verse teleportation)
+- ✅ Precise position lookup from database
+- ✅ Fallback to estimation if database not generated
+- ✅ Self-documenting help (lists all 66 books)
+- ✅ Supports formats: `/bgoto Genesis`, `/bgoto Genesis 1`, `/bgoto John 3:16`
+
+### 8. Enhanced Flying Controls ✅
+- ✅ Spectator-style horizontal movement (50 blocks/sec)
+- ✅ WASD moves in XZ plane only (ignores vertical look angle)
+- ✅ Perfect for viewing flat Bible text from above
+- ✅ Space bar for vertical movement
+
 ---
 
-## Ideas for Future (v1.1+)
+## Ideas for Future (v1.3+)
+
+### High Priority
+- [ ] **Resumable Bible generation** - Track which books are complete, resume from last incomplete book if generation interrupted
+- [ ] Bible verse search functionality (keyword search with teleport)
+- [ ] Waypoints/bookmarks system (save favorite locations)
+- [ ] `/blist` command to show nearby verses/chapters
 
 ### Performance Enhancements
 - [ ] Implement glyph caching system (cache frequently used characters)
-- [ ] Add Bible verse indexing for faster lookup
 - [ ] Optimize font file reading (mmap or memory caching)
 - [ ] Batch rendering for multiple text blocks
+- [ ] Async Bible generation (non-blocking startup)
 
 ### Feature Additions
 - [ ] Dynamic text scaling support (runtime adjustable)
 - [ ] Text rotation/orientation options (vertical, rotated)
 - [ ] Support for additional Bible translations (NIV, ESV, etc.)
-- [ ] Bible search functionality (keyword search)
 - [ ] Text color/block type variations (gradients, multi-color)
+- [ ] Multiple Bible worlds (different translations as separate worlds)
 - [ ] In-game text editor UI
 - [ ] Save/load text placements (presets)
 - [ ] Sign integration for smaller text
 - [ ] Text effects (shadows, outlines, glow)
 - [ ] Multi-column Bible layout
-- [ ] Chapter/book navigation system
-- [ ] Bookmarks for favorite verses
+- [ ] Minimap showing current book/chapter location
 
 ### Quality of Life
 - [ ] Auto-positioning helper (finds good Y coordinate)
@@ -86,11 +120,13 @@
 
 - Current font: GNU Unifont 17.0.03 (dual-licensed GPL2+/OFL 1.1)
 - Bible: KJV Pure Cambridge Edition (public domain)
-- World gen: Normal terrain (flatlands disabled by default)
-- Text advances along X axis (left to right)
+- World gen: Flatlands mode enabled (Y=32 ground level)
+- Bible layout: Books along X-axis (600 blocks apart), scrolls along Z-axis
+- Bible position: X=1000 (Genesis) to X=40600 (Revelation)
+- Text rendering: Flat horizontal layout, readable from above
 - CJK characters: 16×16 pixels, Latin: 8×16 pixels
-- Total codebase: ~6,588 lines of C code
-- Documentation: 3 comprehensive guides in Docs/
+- Flying speed: 50 blocks/sec (spectator-style)
+- Total verses tracked: 31,102 with precise coordinates
 - Build system: CMake with MinGW support
 
 ## File Structure

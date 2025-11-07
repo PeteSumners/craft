@@ -17,6 +17,10 @@ static sqlite3_stmt *load_lights_stmt;
 static sqlite3_stmt *load_signs_stmt;
 static sqlite3_stmt *get_key_stmt;
 static sqlite3_stmt *set_key_stmt;
+static sqlite3_stmt *get_metadata_stmt;
+static sqlite3_stmt *set_metadata_stmt;
+static sqlite3_stmt *insert_bible_pos_stmt;
+static sqlite3_stmt *get_bible_pos_stmt;
 
 static Ring ring;
 static thrd_t thrd;
@@ -86,11 +90,24 @@ int db_init(char *path) {
         "    face int not null,"
         "    text text not null"
         ");"
+        "create table if not exists metadata ("
+        "    key text not null primary key,"
+        "    value text not null"
+        ");"
+        "create table if not exists bible_position ("
+        "    book text not null,"
+        "    chapter int not null,"
+        "    verse int not null,"
+        "    x int not null,"
+        "    y int not null,"
+        "    z int not null"
+        ");"
         "create unique index if not exists block_pqxyz_idx on block (p, q, x, y, z);"
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
         "create unique index if not exists key_pq_idx on key (p, q);"
         "create unique index if not exists sign_xyzface_idx on sign (x, y, z, face);"
-        "create index if not exists sign_pq_idx on sign (p, q);";
+        "create index if not exists sign_pq_idx on sign (p, q);"
+        "create unique index if not exists bible_position_idx on bible_position (book, chapter, verse);";
     static const char *insert_block_query =
         "insert or replace into block (p, q, x, y, z, w) "
         "values (?, ?, ?, ?, ?, ?);";
@@ -115,6 +132,16 @@ int db_init(char *path) {
     static const char *set_key_query =
         "insert or replace into key (p, q, key) "
         "values (?, ?, ?);";
+    static const char *get_metadata_query =
+        "select value from metadata where key = ?;";
+    static const char *set_metadata_query =
+        "insert or replace into metadata (key, value) "
+        "values (?, ?);";
+    static const char *insert_bible_pos_query =
+        "insert or replace into bible_position (book, chapter, verse, x, y, z) "
+        "values (?, ?, ?, ?, ?, ?);";
+    static const char *get_bible_pos_query =
+        "select x, y, z from bible_position where book = ? and chapter = ? and verse = ?;";
     int rc;
     rc = sqlite3_open(path, &db);
     if (rc) return rc;
@@ -144,6 +171,14 @@ int db_init(char *path) {
     rc = sqlite3_prepare_v2(db, get_key_query, -1, &get_key_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, set_key_query, -1, &set_key_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, get_metadata_query, -1, &get_metadata_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, set_metadata_query, -1, &set_metadata_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, insert_bible_pos_query, -1, &insert_bible_pos_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, get_bible_pos_query, -1, &get_bible_pos_stmt, NULL);
     if (rc) return rc;
     sqlite3_exec(db, "begin;", NULL, NULL, NULL);
     db_worker_start();
@@ -181,6 +216,18 @@ void db_commit() {
 
 void _db_commit() {
     sqlite3_exec(db, "commit; begin;", NULL, NULL, NULL);
+}
+
+// Force immediate synchronous commit (for critical saves like generation progress)
+void db_commit_sync() {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&load_mtx);
+    _db_commit();
+    // Force a full sync to disk
+    sqlite3_exec(db, "PRAGMA wal_checkpoint(FULL);", NULL, NULL, NULL);
+    mtx_unlock(&load_mtx);
 }
 
 void db_auth_set(char *username, char *identity_token) {
@@ -484,6 +531,74 @@ void _db_set_key(int p, int q, int key) {
     sqlite3_bind_int(set_key_stmt, 2, q);
     sqlite3_bind_int(set_key_stmt, 3, key);
     sqlite3_step(set_key_stmt);
+}
+
+int db_get_metadata(const char *key, char *value, int value_length) {
+    if (!db_enabled) {
+        return 0;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(get_metadata_stmt);
+    sqlite3_bind_text(get_metadata_stmt, 1, key, -1, SQLITE_STATIC);
+    if (sqlite3_step(get_metadata_stmt) == SQLITE_ROW) {
+        const char *result = (const char *)sqlite3_column_text(get_metadata_stmt, 0);
+        if (result && value && value_length > 0) {
+            strncpy(value, result, value_length - 1);
+            value[value_length - 1] = '\0';
+        }
+        mtx_unlock(&load_mtx);
+        return 1;
+    }
+    mtx_unlock(&load_mtx);
+    return 0;
+}
+
+void db_set_metadata(const char *key, const char *value) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(set_metadata_stmt);
+    sqlite3_bind_text(set_metadata_stmt, 1, key, -1, SQLITE_STATIC);
+    sqlite3_bind_text(set_metadata_stmt, 2, value, -1, SQLITE_STATIC);
+    sqlite3_step(set_metadata_stmt);
+    mtx_unlock(&load_mtx);
+}
+
+void db_insert_bible_position(const char *book, int chapter, int verse, int x, int y, int z) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(insert_bible_pos_stmt);
+    sqlite3_bind_text(insert_bible_pos_stmt, 1, book, -1, SQLITE_STATIC);
+    sqlite3_bind_int(insert_bible_pos_stmt, 2, chapter);
+    sqlite3_bind_int(insert_bible_pos_stmt, 3, verse);
+    sqlite3_bind_int(insert_bible_pos_stmt, 4, x);
+    sqlite3_bind_int(insert_bible_pos_stmt, 5, y);
+    sqlite3_bind_int(insert_bible_pos_stmt, 6, z);
+    sqlite3_step(insert_bible_pos_stmt);
+    mtx_unlock(&load_mtx);
+}
+
+int db_get_bible_position(const char *book, int chapter, int verse, int *x, int *y, int *z) {
+    if (!db_enabled) {
+        return 0;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(get_bible_pos_stmt);
+    sqlite3_bind_text(get_bible_pos_stmt, 1, book, -1, SQLITE_STATIC);
+    sqlite3_bind_int(get_bible_pos_stmt, 2, chapter);
+    sqlite3_bind_int(get_bible_pos_stmt, 3, verse);
+    if (sqlite3_step(get_bible_pos_stmt) == SQLITE_ROW) {
+        *x = sqlite3_column_int(get_bible_pos_stmt, 0);
+        *y = sqlite3_column_int(get_bible_pos_stmt, 1);
+        *z = sqlite3_column_int(get_bible_pos_stmt, 2);
+        mtx_unlock(&load_mtx);
+        return 1;
+    }
+    mtx_unlock(&load_mtx);
+    return 0;
 }
 
 void db_worker_start(char *path) {

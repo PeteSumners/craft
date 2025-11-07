@@ -85,11 +85,42 @@ int bible_render_verse_range_flat(
 // Generate the entire Bible in the world as part of world generation
 // This renders all 66 books, 1,189 chapters in a massive grid
 // Uses flat rendering for space efficiency
-// Returns 1 on success, 0 on failure
+// Returns the X extent (total width in blocks) on success, 0 on failure
 int bible_generate_world(
     int start_x, int start_y, int start_z,
     int block_type,
     void (*block_func)(int x, int y, int z, int w)
 );
+
+// Generate glass platforms at teleport points
+// Creates spawn platform and prepares for per-location landing pads
+void bible_generate_glass_platforms(
+    int start_x, int start_y, int start_z,
+    int platform_y,
+    void (*block_func)(int x, int y, int z, int w)
+);
+
+// Render help message at spawn explaining controls
+void bible_render_help_message(
+    int x, int y, int z,
+    int block_type,
+    void (*block_func)(int x, int y, int z, int w)
+);
+
+// Generate a small glass landing platform at specific coordinates
+// Used by bgoto to ensure a platform exists at teleport destination
+void bible_generate_landing_platform(
+    int center_x, int center_z, int platform_y,
+    void (*block_func)(int x, int y, int z, int w)
+);
+
+// VALIDATION FUNCTIONS
+// Get the number of chapters in a book
+// Returns chapter count, or 0 if book not found
+int bible_get_chapter_count(const char *book);
+
+// Get the number of verses in a specific chapter
+// Returns verse count, or 0 if book/chapter not found
+int bible_get_verse_count(const char *book, int chapter);
 
 #endif

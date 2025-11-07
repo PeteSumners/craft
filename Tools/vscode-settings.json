@@ -1,0 +1,38 @@
+{
+  // Copy this to Craft/.vscode/settings.json for VSCode integration
+
+  "C_Cpp.default.compilerPath": "C:/MinGW/bin/gcc.exe",
+  "C_Cpp.default.cStandard": "c99",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/src",
+    "${workspaceFolder}/deps/**"
+  ],
+  "C_Cpp.default.defines": [
+    "_WIN32"
+  ],
+
+  // Enable clang-tidy
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+  "C_Cpp.codeAnalysis.clangTidy.path": "clang-tidy",
+  "C_Cpp.codeAnalysis.clangTidy.config": {
+    "Checks": "clang-analyzer-*,bugprone-*,cert-*,performance-*"
+  },
+
+  // Code formatting
+  "editor.formatOnSave": false,
+  "C_Cpp.formatting": "clangFormat",
+
+  // File associations
+  "files.associations": {
+    "*.h": "c",
+    "*.c": "c"
+  },
+
+  // Exclude build artifacts
+  "files.exclude": {
+    "**/*.o": true,
+    "**/*.obj": true,
+    "**/build_*": true,
+    "**/*.db": true
+  }
+}
