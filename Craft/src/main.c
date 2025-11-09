@@ -2547,10 +2547,13 @@ void parse_command(const char *buffer, int forward) {
             if (matches) {
                 // Check that it's followed by end-of-string, space, or digit
                 char next_char = args[book_name_len];
+                printf("DEBUG: Matched '%s' (index %d), next_char='%c' (0x%02x)\n",
+                       bible_books[i], i, next_char ? next_char : '0', (unsigned char)next_char);
                 if (next_char == '\0' || next_char == ' ' || isdigit(next_char)) {
                     // Found the book!
                     book_index = i;
                     strncpy(book, bible_books[i], sizeof(book) - 1);
+                    printf("DEBUG: SELECTED book_index=%d, book='%s'\n", book_index, book);
 
                     // Extract chapter/verse from the rest
                     const char *remainder = args + book_name_len;
@@ -2641,6 +2644,10 @@ void parse_command(const char *buffer, int forward) {
                 s->z = pos_z;               // Right at the start of the text
             } else {
                 // Fallback to estimated position (Bible not yet generated)
+                printf("DEBUG: Calculating estimated position for book_index=%d\n", book_index);
+                printf("DEBUG: Formula: X = %d + (%d * %d) = %d\n",
+                       BIBLE_START_X, book_index, book_spacing,
+                       BIBLE_START_X + (book_index * book_spacing));
                 s->x = BIBLE_START_X + (book_index * book_spacing);
                 int z_offset = 0;
                 if (chapter > 0) {
