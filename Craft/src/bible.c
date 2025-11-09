@@ -1048,7 +1048,7 @@ int bible_get_verse_count(const char *book, int chapter) {
 // ============================================================================
 
 // Configuration for daily reading area
-#define DAILY_READING_X -5000       // Negative X to separate from main Bible
+#define DAILY_READING_X -500        // Negative X, close to spawn but separate from info area
 #define DAILY_READING_Y 75          // Same Y level as main Bible
 #define DAILY_READING_Z 0           // Starting Z
 #define DAILY_READING_WIDTH 50      // Text width
@@ -1134,7 +1134,7 @@ void bible_clear_daily_reading(void (*block_func)(int x, int y, int z, int w)) {
 
     // Query database for all daily reading blocks and delete them
     // For now, use a simpler approach: delete blocks in a fixed region
-    // Region: X = -5100 to -4900, Y = 70 to 250, Z = 0 to 1000
+    // Region: X = -600 to -400, Y = 70 to 250, Z = 0 to 1000
 
     int deleted_count = 0;
     for (int x = DAILY_READING_X - 100; x <= DAILY_READING_X + 100; x++) {

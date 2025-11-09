@@ -2493,7 +2493,7 @@ void parse_command(const char *buffer, int forward) {
             if (found_position) {
                 // Use precise position from database
                 s->x = pos_x;
-                s->y = pos_y + 102;  // 102 blocks above the text (viewing altitude)
+                s->y = pos_y + 104;  // 104 blocks above text (2 blocks above platform)
                 s->z = pos_z;        // Right at the start of text
                 s->rx = 0;           // Look forward (along +Z)
                 s->ry = -45;         // Look down at text far below
@@ -2507,7 +2507,7 @@ void parse_command(const char *buffer, int forward) {
             } else {
                 // Fallback to calculated position (if Bible not yet generated)
                 s->x = 0;                      // World origin
-                s->y = BIBLE_START_Y + 102;    // 102 blocks above Bible text
+                s->y = BIBLE_START_Y + 104;    // 104 blocks above Bible text (2 above platform)
                 s->z = 0;                      // Right at origin
                 s->rx = 0;
                 s->ry = -45;                   // Look down at text
@@ -2640,7 +2640,7 @@ void parse_command(const char *buffer, int forward) {
                 // Use precise position from database
                 printf("Using precise position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
                 s->x = pos_x;
-                s->y = pos_y + 102;         // 102 blocks above the text (viewing altitude)
+                s->y = pos_y + 104;         // 104 blocks above text (2 blocks above platform)
                 s->z = pos_z;               // Right at the start of the text
             } else {
                 // Fallback to estimated position (Bible not yet generated)
@@ -2656,7 +2656,7 @@ void parse_command(const char *buffer, int forward) {
                         z_offset += (verse - 1) * 18;
                     }
                 }
-                s->y = BIBLE_START_Y + 102; // 102 blocks above Bible text
+                s->y = BIBLE_START_Y + 104; // 104 blocks above Bible text (2 above platform)
                 s->z = BIBLE_START_Z + z_offset;  // Right at the start
 
                 printf("Using estimated position: (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
@@ -2699,7 +2699,7 @@ void parse_command(const char *buffer, int forward) {
             // Teleport to daily reading area
             State *s = &g->players->state;
             s->x = DAILY_READING_X;
-            s->y = DAILY_READING_Y + 102;  // 102 blocks above text
+            s->y = DAILY_READING_Y + 104;  // 104 blocks above text (2 above platform)
             s->z = DAILY_READING_Z;
             s->rx = 0;   // Look south (along +Z)
             s->ry = -45; // Look down
