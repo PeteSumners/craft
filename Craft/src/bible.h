@@ -114,6 +114,30 @@ void bible_generate_landing_platform(
     void (*block_func)(int x, int y, int z, int w)
 );
 
+// DAILY READING PLAN FUNCTIONS
+// Generate today's daily reading plan (1-year plan, ~3-4 chapters/day)
+// Returns 1 on success, 0 on failure
+// Automatically detects current date and regenerates if needed
+// Renders at negative X coordinates (separate from main Bible)
+int bible_generate_daily_reading(
+    void (*block_func)(int x, int y, int z, int w)
+);
+
+// Delete all blocks in the daily reading area
+void bible_clear_daily_reading(
+    void (*block_func)(int x, int y, int z, int w)
+);
+
+// Get today's reading chapters (for a given day 1-365)
+// Returns number of chapters to read
+// Fills out_books and out_chapters arrays with the reading list
+int bible_get_daily_chapters(
+    int day_of_year,
+    char out_books[][64],
+    int out_chapters[],
+    int max_entries
+);
+
 // VALIDATION FUNCTIONS
 // Get the number of chapters in a book
 // Returns chapter count, or 0 if book not found

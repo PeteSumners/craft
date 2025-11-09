@@ -102,6 +102,12 @@ int db_init(char *path) {
         "    y int not null,"
         "    z int not null"
         ");"
+        "create table if not exists daily_reading_blocks ("
+        "    x int not null,"
+        "    y int not null,"
+        "    z int not null,"
+        "    date text not null"
+        ");"
         "create unique index if not exists block_pqxyz_idx on block (p, q, x, y, z);"
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
         "create unique index if not exists key_pq_idx on key (p, q);"
@@ -599,6 +605,56 @@ int db_get_bible_position(const char *book, int chapter, int verse, int *x, int 
     }
     mtx_unlock(&load_mtx);
     return 0;
+}
+
+void db_insert_daily_reading_block(int x, int y, int z, const char *date) {
+    if (!db_enabled) {
+        return;
+    }
+    static sqlite3_stmt *stmt = NULL;
+    if (!stmt) {
+        const char *query = "insert into daily_reading_blocks (x, y, z, date) values (?, ?, ?, ?);";
+        sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(stmt);
+    sqlite3_bind_int(stmt, 1, x);
+    sqlite3_bind_int(stmt, 2, y);
+    sqlite3_bind_int(stmt, 3, z);
+    sqlite3_bind_text(stmt, 4, date, -1, SQLITE_STATIC);
+    sqlite3_step(stmt);
+    mtx_unlock(&load_mtx);
+}
+
+void db_delete_daily_reading_blocks(const char *date) {
+    if (!db_enabled) {
+        return;
+    }
+    static sqlite3_stmt *stmt = NULL;
+    if (!stmt) {
+        const char *query = "delete from daily_reading_blocks where date = ?;";
+        sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(stmt);
+    sqlite3_bind_text(stmt, 1, date, -1, SQLITE_STATIC);
+    sqlite3_step(stmt);
+    mtx_unlock(&load_mtx);
+}
+
+void db_delete_all_daily_reading_blocks() {
+    if (!db_enabled) {
+        return;
+    }
+    static sqlite3_stmt *stmt = NULL;
+    if (!stmt) {
+        const char *query = "delete from daily_reading_blocks;";
+        sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(stmt);
+    sqlite3_step(stmt);
+    mtx_unlock(&load_mtx);
 }
 
 void db_worker_start(char *path) {

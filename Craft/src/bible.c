@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 static char *bible_file_path = NULL;
 static int bible_initialized = 0;
@@ -1040,4 +1041,241 @@ int bible_get_verse_count(const char *book, int chapter) {
 
     fclose(f);
     return max_verse; // Return highest verse number found
+}
+
+// ============================================================================
+// DAILY READING PLAN IMPLEMENTATION
+// ============================================================================
+
+// Configuration for daily reading area
+#define DAILY_READING_X -5000       // Negative X to separate from main Bible
+#define DAILY_READING_Y 75          // Same Y level as main Bible
+#define DAILY_READING_Z 0           // Starting Z
+#define DAILY_READING_WIDTH 50      // Text width
+#define DAILY_READING_BLOCK_TYPE 3  // Stone blocks
+
+// Get current date in ISO format (YYYY-MM-DD)
+static void get_current_date_iso(char *buffer, size_t buffer_size) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    snprintf(buffer, buffer_size, "%04d-%02d-%02d",
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+}
+
+// Get day of year (1-365)
+static int get_day_of_year() {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    return t->tm_yday + 1; // tm_yday is 0-based
+}
+
+// Map chapter index (0-1188) to book and chapter
+// Returns 1 on success, 0 on failure
+static int chapter_index_to_book_chapter(int chapter_idx, char *out_book, int *out_chapter) {
+    // This is a cumulative index across all 66 books
+    int cumulative = 0;
+
+    for (int i = 0; i < BIBLE_BOOK_COUNT; i++) {
+        int book_chapters = bible_books[i].chapters;
+        if (chapter_idx < cumulative + book_chapters) {
+            // Found the book!
+            strcpy(out_book, bible_books[i].name);
+            *out_chapter = (chapter_idx - cumulative) + 1; // 1-based chapter
+            return 1;
+        }
+        cumulative += book_chapters;
+    }
+    return 0;
+}
+
+// Get which chapters to read for a given day (1-365)
+// Returns number of chapters
+int bible_get_daily_chapters(int day_of_year, char out_books[][64], int out_chapters[], int max_entries) {
+    if (day_of_year < 1 || day_of_year > 365) {
+        fprintf(stderr, "Invalid day_of_year: %d (must be 1-365)\n", day_of_year);
+        return 0;
+    }
+
+    // Total chapters in Bible: 1,189
+    // Chapters per day: 1189 / 365 = 3.2575...
+    // We use a simple linear distribution
+
+    const int total_chapters = 1189;
+    const int total_days = 365;
+
+    // Calculate start and end chapter indices for this day (0-based)
+    int start_chapter_idx = ((day_of_year - 1) * total_chapters) / total_days;
+    int end_chapter_idx = (day_of_year * total_chapters) / total_days - 1;
+
+    int chapters_to_read = (end_chapter_idx - start_chapter_idx + 1);
+
+    if (chapters_to_read > max_entries) {
+        fprintf(stderr, "Not enough space in output arrays (need %d, have %d)\n",
+                chapters_to_read, max_entries);
+        return 0;
+    }
+
+    // Convert chapter indices to book/chapter pairs
+    int count = 0;
+    for (int idx = start_chapter_idx; idx <= end_chapter_idx && count < max_entries; idx++) {
+        if (!chapter_index_to_book_chapter(idx, out_books[count], &out_chapters[count])) {
+            fprintf(stderr, "Failed to map chapter index %d\n", idx);
+            return 0;
+        }
+        count++;
+    }
+
+    return count;
+}
+
+// Clear all blocks in daily reading area
+void bible_clear_daily_reading(void (*block_func)(int x, int y, int z, int w)) {
+    printf("Clearing previous daily reading...\n");
+
+    // Query database for all daily reading blocks and delete them
+    // For now, use a simpler approach: delete blocks in a fixed region
+    // Region: X = -5100 to -4900, Y = 70 to 250, Z = 0 to 1000
+
+    int deleted_count = 0;
+    for (int x = DAILY_READING_X - 100; x <= DAILY_READING_X + 100; x++) {
+        for (int y = DAILY_READING_Y - 5; y <= DAILY_READING_Y + 175; y++) {
+            for (int z = DAILY_READING_Z; z <= DAILY_READING_Z + 1000; z++) {
+                block_func(x, y, z, 0); // Set to AIR (0)
+                deleted_count++;
+            }
+        }
+    }
+
+    printf("  Cleared %d blocks in daily reading area\n", deleted_count);
+
+    // Clear database tracking
+    db_delete_all_daily_reading_blocks();
+}
+
+// Generate today's daily reading
+int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w)) {
+    if (!bible_initialized || !bible_file_path) {
+        fprintf(stderr, "Bible system not initialized\n");
+        return 0;
+    }
+
+    printf("\n");
+    printf("========================================\n");
+    printf("  GENERATING DAILY READING\n");
+    printf("========================================\n");
+
+    // Get current date
+    char today_date[32];
+    get_current_date_iso(today_date, sizeof(today_date));
+    printf("  Date: %s\n", today_date);
+
+    // Check if we already generated today's reading
+    char last_date[32] = {0};
+    if (db_get_metadata("daily_reading_date", last_date, sizeof(last_date))) {
+        if (strcmp(last_date, today_date) == 0) {
+            printf("  Daily reading already generated for today!\n");
+            printf("========================================\n\n");
+            return 1; // Already done
+        } else {
+            printf("  Last generation: %s\n", last_date);
+            printf("  Clearing old reading and generating new...\n");
+            bible_clear_daily_reading(block_func);
+        }
+    }
+
+    // Get day of year (1-365)
+    int day = get_day_of_year();
+    printf("  Day of year: %d / 365\n", day);
+
+    // Get chapters to read today
+    char books[10][64];  // Max 10 chapters per day (usually 3-4)
+    int chapters[10];
+    int num_chapters = bible_get_daily_chapters(day, books, chapters, 10);
+
+    if (num_chapters == 0) {
+        fprintf(stderr, "Failed to get daily chapters\n");
+        return 0;
+    }
+
+    printf("  Today's reading: %d chapters\n", num_chapters);
+    for (int i = 0; i < num_chapters; i++) {
+        printf("    %d. %s %d\n", i + 1, books[i], chapters[i]);
+    }
+    printf("========================================\n\n");
+
+    // Generate viewing platform
+    printf("Creating viewing platform at (%d, %d, %d)...\n",
+           DAILY_READING_X, DAILY_READING_Y + 102, DAILY_READING_Z);
+    int viewing_altitude = DAILY_READING_Y + 102;
+    for (int x = DAILY_READING_X - 7; x <= DAILY_READING_X + 7; x++) {
+        for (int z = DAILY_READING_Z - 7; z <= DAILY_READING_Z + 7; z++) {
+            block_func(x, viewing_altitude, z, 10); // GLASS
+        }
+    }
+
+    // Render title
+    printf("Rendering title...\n");
+    int current_z = DAILY_READING_Z;
+    char title[256];
+    snprintf(title, sizeof(title), "=== DAILY READING - %s ===", today_date);
+    int title_lines = voxel_text_render_flat(
+        title,
+        DAILY_READING_X - 200,  // Center the title
+        DAILY_READING_Y,
+        current_z,
+        DAILY_READING_BLOCK_TYPE,
+        DAILY_READING_WIDTH,
+        2,  // Scale
+        block_func
+    );
+    current_z += (title_lines * 18) + 30;
+
+    // Render each chapter
+    for (int i = 0; i < num_chapters; i++) {
+        printf("Rendering %s %d...\n", books[i], chapters[i]);
+
+        // Chapter header
+        char header[128];
+        snprintf(header, sizeof(header), "--- %s %d ---", books[i], chapters[i]);
+        int header_lines = voxel_text_render_flat(
+            header,
+            DAILY_READING_X,
+            DAILY_READING_Y,
+            current_z,
+            DAILY_READING_BLOCK_TYPE,
+            DAILY_READING_WIDTH,
+            2,
+            block_func
+        );
+        current_z += (header_lines * 18) + 20;
+
+        // Render chapter content
+        int z_extent = bible_render_chapter_flat(
+            books[i],
+            chapters[i],
+            DAILY_READING_X,
+            DAILY_READING_Y,
+            current_z,
+            DAILY_READING_BLOCK_TYPE,
+            DAILY_READING_WIDTH,
+            18,  // Line spacing
+            block_func
+        );
+
+        current_z += z_extent + 40; // Add spacing between chapters
+        printf("  %s %d complete (Z extent: %d)\n", books[i], chapters[i], z_extent);
+    }
+
+    // Save metadata
+    db_set_metadata("daily_reading_date", today_date);
+    db_commit_sync();
+
+    printf("\n");
+    printf("========================================\n");
+    printf("  DAILY READING COMPLETE\n");
+    printf("  Total Z extent: %d blocks\n", current_z - DAILY_READING_Z);
+    printf("  Use /daily to teleport here!\n");
+    printf("========================================\n\n");
+
+    return 1;
 }

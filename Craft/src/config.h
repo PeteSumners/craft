@@ -42,6 +42,11 @@
 #define BIBLE_SPAWN_X 0                  // Spawn X coordinate (at world origin, info area)
 #define BIBLE_SPAWN_Z 0                  // Spawn Z coordinate (at info area origin)
 
+// Daily reading plan options
+#define DAILY_READING_X -5000            // Negative X to separate from main Bible
+#define DAILY_READING_Y 75               // Same Y level as main Bible
+#define DAILY_READING_Z 0                // Starting Z coordinate
+
 // key bindings
 #define CRAFT_KEY_FORWARD 'W'
 #define CRAFT_KEY_BACKWARD 'S'

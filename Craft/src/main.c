@@ -2688,6 +2688,33 @@ void parse_command(const char *buffer, int forward) {
             add_message("Book not found! Use /bgoto to see all books.");
         }
     }
+    else if (strncmp(buffer, "/daily", 6) == 0) {
+        // Daily reading: auto-generate today's reading and teleport
+        printf("DEBUG: /daily command received\n");
+
+        // Generate today's reading (will check if already generated)
+        int success = bible_generate_daily_reading(builder_block);
+
+        if (success) {
+            // Teleport to daily reading area
+            State *s = &g->players->state;
+            s->x = DAILY_READING_X;
+            s->y = DAILY_READING_Y + 102;  // 102 blocks above text
+            s->z = DAILY_READING_Z;
+            s->rx = 0;   // Look south (along +Z)
+            s->ry = -45; // Look down
+
+            add_message("Teleported to today's daily reading!");
+            char coord_msg[256];
+            snprintf(coord_msg, sizeof(coord_msg),
+                     "Position: (%d, %d, %d)",
+                     (int)s->x, (int)s->y, (int)s->z);
+            add_message(coord_msg);
+            add_message("Enable flying (Tab) to navigate");
+        } else {
+            add_message("Failed to generate daily reading");
+        }
+    }
     else if (forward) {
         client_talk(buffer);
     }
