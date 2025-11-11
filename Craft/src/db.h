@@ -40,6 +40,7 @@ void db_insert_bible_position(const char *book, int chapter, int verse, int x, i
 int db_get_bible_position(const char *book, int chapter, int verse, int *x, int *y, int *z);
 void db_insert_daily_reading_block(int x, int y, int z, const char *date);
 void db_delete_daily_reading_blocks(const char *date);
+int db_get_all_daily_reading_blocks(int **out_x, int **out_y, int **out_z);
 void db_delete_all_daily_reading_blocks();
 void db_worker_start();
 void db_worker_stop();

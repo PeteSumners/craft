@@ -119,6 +119,7 @@ void bible_generate_landing_platform(
 // Returns 1 on success, 0 on failure
 // Automatically detects current date and regenerates if needed
 // Renders at negative X coordinates (separate from main Bible)
+// Uses worldgen flag system - automatically clears and regenerates when date changes
 int bible_generate_daily_reading(
     void (*block_func)(int x, int y, int z, int w)
 );

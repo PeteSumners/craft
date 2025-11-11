@@ -642,6 +642,59 @@ void db_delete_daily_reading_blocks(const char *date) {
     mtx_unlock(&load_mtx);
 }
 
+// Get all daily reading blocks for clearing
+// Returns number of blocks retrieved
+int db_get_all_daily_reading_blocks(int **out_x, int **out_y, int **out_z) {
+    if (!db_enabled) {
+        return 0;
+    }
+
+    // First, count how many blocks we have
+    static sqlite3_stmt *count_stmt = NULL;
+    if (!count_stmt) {
+        const char *query = "select count(*) from daily_reading_blocks;";
+        sqlite3_prepare_v2(db, query, -1, &count_stmt, NULL);
+    }
+
+    mtx_lock(&load_mtx);
+    sqlite3_reset(count_stmt);
+    int count = 0;
+    if (sqlite3_step(count_stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(count_stmt, 0);
+    }
+    mtx_unlock(&load_mtx);
+
+    if (count == 0) {
+        return 0;
+    }
+
+    // Allocate arrays
+    *out_x = (int *)malloc(count * sizeof(int));
+    *out_y = (int *)malloc(count * sizeof(int));
+    *out_z = (int *)malloc(count * sizeof(int));
+
+    // Query all blocks
+    static sqlite3_stmt *select_stmt = NULL;
+    if (!select_stmt) {
+        const char *query = "select x, y, z from daily_reading_blocks;";
+        sqlite3_prepare_v2(db, query, -1, &select_stmt, NULL);
+    }
+
+    mtx_lock(&load_mtx);
+    sqlite3_reset(select_stmt);
+
+    int i = 0;
+    while (sqlite3_step(select_stmt) == SQLITE_ROW && i < count) {
+        (*out_x)[i] = sqlite3_column_int(select_stmt, 0);
+        (*out_y)[i] = sqlite3_column_int(select_stmt, 1);
+        (*out_z)[i] = sqlite3_column_int(select_stmt, 2);
+        i++;
+    }
+    mtx_unlock(&load_mtx);
+
+    return i;
+}
+
 void db_delete_all_daily_reading_blocks() {
     if (!db_enabled) {
         return;

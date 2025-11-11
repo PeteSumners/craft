@@ -43,7 +43,7 @@
 #define BIBLE_SPAWN_Z 0                  // Spawn Z coordinate (at info area origin)
 
 // Daily reading plan options
-#define DAILY_READING_X -500             // Negative X, close to spawn but separate from info area
+#define DAILY_READING_X -1200            // Negative X, well separated from preface area at origin
 #define DAILY_READING_Y 75               // Same Y level as main Bible
 #define DAILY_READING_Z 0                // Starting Z coordinate
 

@@ -1048,7 +1048,7 @@ int bible_get_verse_count(const char *book, int chapter) {
 // ============================================================================
 
 // Configuration for daily reading area
-#define DAILY_READING_X -500        // Negative X, close to spawn but separate from info area
+#define DAILY_READING_X -1200       // Negative X, well separated from preface area at origin
 #define DAILY_READING_Y 75          // Same Y level as main Bible
 #define DAILY_READING_Z 0           // Starting Z
 #define DAILY_READING_WIDTH 50      // Text width
@@ -1086,6 +1086,25 @@ static int chapter_index_to_book_chapter(int chapter_idx, char *out_book, int *o
         cumulative += book_chapters;
     }
     return 0;
+}
+
+// Static context for tracking daily reading blocks
+static struct {
+    void (*original_block_func)(int x, int y, int z, int w);
+    const char *date;
+} daily_reading_ctx = {NULL, NULL};
+
+// Wrapper function that tracks blocks in database
+static void daily_reading_block_wrapper(int x, int y, int z, int w) {
+    if (daily_reading_ctx.original_block_func) {
+        // Place the block
+        daily_reading_ctx.original_block_func(x, y, z, w);
+
+        // Track non-air blocks only
+        if (w != 0 && daily_reading_ctx.date) {
+            db_insert_daily_reading_block(x, y, z, daily_reading_ctx.date);
+        }
+    }
 }
 
 // Get which chapters to read for a given day (1-365)
@@ -1132,21 +1151,31 @@ int bible_get_daily_chapters(int day_of_year, char out_books[][64], int out_chap
 void bible_clear_daily_reading(void (*block_func)(int x, int y, int z, int w)) {
     printf("Clearing previous daily reading...\n");
 
-    // Query database for all daily reading blocks and delete them
-    // For now, use a simpler approach: delete blocks in a fixed region
-    // Region: X = -600 to -400, Y = 70 to 250, Z = 0 to 1000
+    // Query database for all daily reading blocks
+    int *x_coords = NULL;
+    int *y_coords = NULL;
+    int *z_coords = NULL;
 
-    int deleted_count = 0;
-    for (int x = DAILY_READING_X - 100; x <= DAILY_READING_X + 100; x++) {
-        for (int y = DAILY_READING_Y - 5; y <= DAILY_READING_Y + 175; y++) {
-            for (int z = DAILY_READING_Z; z <= DAILY_READING_Z + 1000; z++) {
-                block_func(x, y, z, 0); // Set to AIR (0)
-                deleted_count++;
-            }
-        }
+    int block_count = db_get_all_daily_reading_blocks(&x_coords, &y_coords, &z_coords);
+
+    if (block_count == 0) {
+        printf("  No blocks to clear (empty database)\n");
+        return;
     }
 
-    printf("  Cleared %d blocks in daily reading area\n", deleted_count);
+    printf("  Found %d blocks to clear in database\n", block_count);
+
+    // Clear each block that was tracked
+    for (int i = 0; i < block_count; i++) {
+        block_func(x_coords[i], y_coords[i], z_coords[i], 0); // Set to AIR (0)
+    }
+
+    // Free allocated memory
+    free(x_coords);
+    free(y_coords);
+    free(z_coords);
+
+    printf("  Cleared %d blocks in daily reading area\n", block_count);
 
     // Clear database tracking
     db_delete_all_daily_reading_blocks();
@@ -1183,6 +1212,10 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
         }
     }
 
+    // Set up tracking context for wrapper
+    daily_reading_ctx.original_block_func = block_func;
+    daily_reading_ctx.date = today_date;
+
     // Get day of year (1-365)
     int day = get_day_of_year();
     printf("  Day of year: %d / 365\n", day);
@@ -1203,17 +1236,17 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
     }
     printf("========================================\n\n");
 
-    // Generate viewing platform
+    // Generate viewing platform (use wrapper to track blocks)
     printf("Creating viewing platform at (%d, %d, %d)...\n",
            DAILY_READING_X, DAILY_READING_Y + 102, DAILY_READING_Z);
     int viewing_altitude = DAILY_READING_Y + 102;
     for (int x = DAILY_READING_X - 7; x <= DAILY_READING_X + 7; x++) {
         for (int z = DAILY_READING_Z - 7; z <= DAILY_READING_Z + 7; z++) {
-            block_func(x, viewing_altitude, z, 10); // GLASS
+            daily_reading_block_wrapper(x, viewing_altitude, z, 10); // GLASS
         }
     }
 
-    // Render title
+    // Render title (use wrapper to track blocks)
     printf("Rendering title...\n");
     int current_z = DAILY_READING_Z;
     char title[256];
@@ -1226,11 +1259,11 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
         DAILY_READING_BLOCK_TYPE,
         DAILY_READING_WIDTH,
         2,  // Scale
-        block_func
+        daily_reading_block_wrapper
     );
     current_z += (title_lines * 18) + 30;
 
-    // Render each chapter
+    // Render each chapter (use wrapper to track blocks)
     for (int i = 0; i < num_chapters; i++) {
         printf("Rendering %s %d...\n", books[i], chapters[i]);
 
@@ -1245,7 +1278,7 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
             DAILY_READING_BLOCK_TYPE,
             DAILY_READING_WIDTH,
             2,
-            block_func
+            daily_reading_block_wrapper
         );
         current_z += (header_lines * 18) + 20;
 
@@ -1259,12 +1292,16 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
             DAILY_READING_BLOCK_TYPE,
             DAILY_READING_WIDTH,
             18,  // Line spacing
-            block_func
+            daily_reading_block_wrapper
         );
 
         current_z += z_extent + 40; // Add spacing between chapters
         printf("  %s %d complete (Z extent: %d)\n", books[i], chapters[i], z_extent);
     }
+
+    // Clear tracking context
+    daily_reading_ctx.original_block_func = NULL;
+    daily_reading_ctx.date = NULL;
 
     // Save metadata
     db_set_metadata("daily_reading_date", today_date);
@@ -1279,3 +1316,4 @@ int bible_generate_daily_reading(void (*block_func)(int x, int y, int z, int w))
 
     return 1;
 }
+

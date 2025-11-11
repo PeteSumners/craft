@@ -21,6 +21,7 @@
 #include "util.h"
 #include "voxel_text.h"
 #include "bible.h"
+#include "progressive_builder.h"
 #include "world.h"
 
 #define MAX_CHUNKS 8192
@@ -2689,31 +2690,20 @@ void parse_command(const char *buffer, int forward) {
         }
     }
     else if (strncmp(buffer, "/daily", 6) == 0) {
-        // Daily reading: auto-generate today's reading and teleport
-        printf("DEBUG: /daily command received\n");
+        // Teleport to daily reading area (reading is auto-generated in worldgen)
+        State *s = &g->players->state;
+        s->x = DAILY_READING_X;
+        s->y = DAILY_READING_Y + 104;
+        s->z = DAILY_READING_Z;
+        s->rx = 0;   // Look south (along +Z axis)
+        s->ry = -45; // Look down at text
 
-        // Generate today's reading (will check if already generated)
-        int success = bible_generate_daily_reading(builder_block);
-
-        if (success) {
-            // Teleport to daily reading area
-            State *s = &g->players->state;
-            s->x = DAILY_READING_X;
-            s->y = DAILY_READING_Y + 104;  // 104 blocks above text (2 above platform)
-            s->z = DAILY_READING_Z;
-            s->rx = 0;   // Look south (along +Z)
-            s->ry = -45; // Look down
-
-            add_message("Teleported to today's daily reading!");
-            char coord_msg[256];
-            snprintf(coord_msg, sizeof(coord_msg),
-                     "Position: (%d, %d, %d)",
-                     (int)s->x, (int)s->y, (int)s->z);
-            add_message(coord_msg);
-            add_message("Enable flying (Tab) to navigate");
-        } else {
-            add_message("Failed to generate daily reading");
-        }
+        add_message("Teleported to daily reading!");
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Position: (%d, %d, %d)",
+                 (int)s->x, (int)s->y, (int)s->z);
+        add_message(msg);
+        add_message("Enable flying (Tab) to navigate");
     }
     else if (forward) {
         client_talk(buffer);
@@ -3252,6 +3242,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Warning: Could not initialize Bible system\n");
     }
 
+    // Initialize progressive builder system
+    progressive_builder_init();
+
     // WINDOW INITIALIZATION //
     if (!glfwInit()) {
         return -1;
@@ -3484,6 +3477,9 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+
+            // Generate or update daily reading (auto-generates based on current date)
+            bible_generate_daily_reading(builder_block);
         }
 #endif
 
@@ -3527,6 +3523,9 @@ int main(int argc, char **argv) {
                 last_commit = now;
                 db_commit();
             }
+
+            // UPDATE PROGRESSIVE BUILDER //
+            progressive_builder_update();
 
             // SEND POSITION TO SERVER //
             if (now - last_update > 0.1) {
@@ -3595,6 +3594,13 @@ int main(int argc, char **argv) {
                         ty -= ts * 2;
                     }
                 }
+            }
+            // Show progressive builder progress
+            if (progressive_builder_is_active()) {
+                int remaining = progressive_builder_get_queue_size();
+                snprintf(text_buffer, 1024, "Building: %d blocks remaining...", remaining);
+                render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
+                ty -= ts * 2;
             }
             if (g->typing) {
                 // Insert cursor character at cursor position
@@ -3679,6 +3685,9 @@ int main(int argc, char **argv) {
         delete_all_chunks();
         delete_all_players();
     }
+
+    // Cleanup systems
+    progressive_builder_cleanup();
 
     glfwTerminate();
     curl_global_cleanup();
