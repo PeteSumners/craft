@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Chunky Craft** is a Minecraft-inspired voxel game written in C with OpenGL, featuring procedural terrain generation, multiplayer support, and an advanced voxel text rendering system using GNU Unifont. The project is a fork/extension of Michael Fogleman's original Craft game with custom enhancements including:
+This is **Craft** by Michael Fogleman (https://github.com/fogleman/Craft) - a Minecraft-inspired voxel game written in C with OpenGL, featuring procedural terrain generation and multiplayer support. This fork extends the original with an advanced voxel text rendering system using GNU Unifont, including:
 
 - **Multi-language text rendering** - Support for English, Chinese, Japanese, Korean, Russian, and more (58,000+ Unicode glyphs)
 - **Bible rendering system** - Complete King James Version (31,102 verses, 66 books) renderable as 3D voxel text

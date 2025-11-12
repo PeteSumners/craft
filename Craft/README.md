@@ -18,7 +18,7 @@ http://www.michaelfogleman.com/craft/
 * World changes persisted in a sqlite3 database.
 * Multiplayer support!
 
-### Enhanced Features (Chunky Craft)
+### Enhanced Features (This Fork)
 
 * **Voxel Text Rendering**: Transform any text into 3D voxel blocks
 * **Multi-Language Support**: Render text in English, Chinese, Japanese, Korean, Russian, and more
@@ -264,7 +264,7 @@ http://0fps.wordpress.com/2013/07/03/ambient-occlusion-for-minecraft-like-worlds
 * sqlite3 is used for saving the blocks added / removed by the user.
 * tinycthread is used for cross-platform threading.
 
-#### Chunky Craft Enhancements
+#### Voxel Text & Bible Rendering Enhancements
 
 **Voxel Text System:**
 

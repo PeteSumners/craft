@@ -1,6 +1,6 @@
-# Chunky Craft Documentation
+# Craft - Voxel Text & Bible Rendering Documentation
 
-This directory contains documentation for the enhanced features of Chunky Craft, a Minecraft-inspired voxel game with advanced text rendering capabilities.
+This directory contains documentation for the voxel text and Bible rendering features added to Craft, Michael Fogleman's Minecraft-inspired voxel game.
 
 ## Documentation Index
 

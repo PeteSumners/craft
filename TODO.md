@@ -1,4 +1,4 @@
-# Chunky Craft - Project TODO
+# Craft Bible Rendering - Project TODO
 
 ## Current Status (v1.2 - World Generation + Navigation)
 ✅ Voxel text rendering system implemented
