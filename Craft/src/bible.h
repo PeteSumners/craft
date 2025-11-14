@@ -114,22 +114,16 @@ void bible_generate_landing_platform(
     void (*block_func)(int x, int y, int z, int w)
 );
 
-// DAILY READING PLAN FUNCTIONS
-// Generate today's daily reading plan (1-year plan, ~3-4 chapters/day)
+// DAILY READING PLAN FUNCTIONS (2026)
+// Generate the entire 365-day reading plan table (2026)
+// Renders all 365 days in one permanent structure
 // Returns 1 on success, 0 on failure
-// Automatically detects current date and regenerates if needed
 // Renders at negative X coordinates (separate from main Bible)
-// Uses worldgen flag system - automatically clears and regenerates when date changes
 int bible_generate_daily_reading(
     void (*block_func)(int x, int y, int z, int w)
 );
 
-// Delete all blocks in the daily reading area
-void bible_clear_daily_reading(
-    void (*block_func)(int x, int y, int z, int w)
-);
-
-// Get today's reading chapters (for a given day 1-365)
+// Get reading chapters for a specific day (1-365)
 // Returns number of chapters to read
 // Fills out_books and out_chapters arrays with the reading list
 int bible_get_daily_chapters(
@@ -138,6 +132,11 @@ int bible_get_daily_chapters(
     int out_chapters[],
     int max_entries
 );
+
+// Get Z coordinate for a specific day's reading (1-365)
+// Returns the Z coordinate where that day's reading starts
+// Used by /daily command to teleport to today's reading
+int bible_get_daily_z_offset(int day_of_year);
 
 // VALIDATION FUNCTIONS
 // Get the number of chapters in a book

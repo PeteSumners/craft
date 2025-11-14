@@ -2690,16 +2690,62 @@ void parse_command(const char *buffer, int forward) {
         }
     }
     else if (strncmp(buffer, "/daily", 6) == 0) {
-        // Teleport to daily reading area (reading is auto-generated in worldgen)
+        // Teleport to daily reading
+        // Usage: /daily [day_number]
+        // If no day number provided, use today's date
         State *s = &g->players->state;
+        int day_of_year;
+
+        // Check if a day number was provided
+        char *arg = buffer + 6;
+        while (*arg == ' ') arg++; // Skip spaces
+
+        if (*arg == '\0') {
+            // No argument - use today's date
+            time_t now = time(NULL);
+            struct tm *t = localtime(&now);
+            day_of_year = t->tm_yday + 1; // tm_yday is 0-based
+
+            // Clamp to valid range (handle leap years)
+            if (day_of_year > 365) day_of_year = 365;
+        } else {
+            // Parse day number
+            day_of_year = atoi(arg);
+            if (day_of_year < 1 || day_of_year > 365) {
+                add_message("Invalid day number! Use 1-365");
+                char usage_msg[256];
+                snprintf(usage_msg, sizeof(usage_msg), "Usage: /daily [day_number]");
+                add_message(usage_msg);
+                snprintf(usage_msg, sizeof(usage_msg), "Example: /daily 3 (for Jan 3)");
+                add_message(usage_msg);
+                return;
+            }
+        }
+
+        // Get Z offset for the reading
+        int z_offset = bible_get_daily_z_offset(day_of_year);
+
         s->x = DAILY_READING_X;
         s->y = DAILY_READING_Y + 104;
-        s->z = DAILY_READING_Z;
+        s->z = z_offset;
         s->rx = 0;   // Look south (along +Z axis)
         s->ry = -45; // Look down at text
 
-        add_message("Teleported to daily reading!");
+        // Calculate date for message
+        static const int month_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        static const char *month_names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        int day_of_month = day_of_year;
+        int month = 0;
+        while (day_of_month > month_days[month]) {
+            day_of_month -= month_days[month];
+            month++;
+        }
+
         char msg[256];
+        snprintf(msg, sizeof(msg), "Teleported to Day %d reading (%s %d, 2026)!",
+                 day_of_year, month_names[month], day_of_month);
+        add_message(msg);
         snprintf(msg, sizeof(msg), "Position: (%d, %d, %d)",
                  (int)s->x, (int)s->y, (int)s->z);
         add_message(msg);
