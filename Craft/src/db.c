@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 #include "db.h"
 #include "ring.h"
@@ -107,6 +108,10 @@ int db_init(char *path) {
         "    y int not null,"
         "    z int not null,"
         "    date text not null"
+        ");"
+        "create table if not exists daily_reading_z_offsets ("
+        "    day int not null primary key,"
+        "    z_offset int not null"
         ");"
         "create unique index if not exists block_pqxyz_idx on block (p, q, x, y, z);"
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
@@ -583,26 +588,36 @@ void db_insert_bible_position(const char *book, int chapter, int verse, int x, i
     sqlite3_bind_int(insert_bible_pos_stmt, 4, x);
     sqlite3_bind_int(insert_bible_pos_stmt, 5, y);
     sqlite3_bind_int(insert_bible_pos_stmt, 6, z);
-    sqlite3_step(insert_bible_pos_stmt);
+    int step_result = sqlite3_step(insert_bible_pos_stmt);
+    if (step_result != SQLITE_DONE) {
+        printf("DB: WARNING - Insert failed for book='%s', chapter=%d, verse=%d (result: %d)\n",
+               book, chapter, verse, step_result);
+        printf("DB: Error: %s\n", sqlite3_errmsg(db));
+    }
     mtx_unlock(&load_mtx);
 }
 
 int db_get_bible_position(const char *book, int chapter, int verse, int *x, int *y, int *z) {
     if (!db_enabled) {
+        printf("DB: db_get_bible_position - database disabled!\n");
         return 0;
     }
+    printf("DB: Querying bible_position for book='%s', chapter=%d, verse=%d\n", book, chapter, verse);
     mtx_lock(&load_mtx);
     sqlite3_reset(get_bible_pos_stmt);
     sqlite3_bind_text(get_bible_pos_stmt, 1, book, -1, SQLITE_STATIC);
     sqlite3_bind_int(get_bible_pos_stmt, 2, chapter);
     sqlite3_bind_int(get_bible_pos_stmt, 3, verse);
-    if (sqlite3_step(get_bible_pos_stmt) == SQLITE_ROW) {
+    int step_result = sqlite3_step(get_bible_pos_stmt);
+    if (step_result == SQLITE_ROW) {
         *x = sqlite3_column_int(get_bible_pos_stmt, 0);
         *y = sqlite3_column_int(get_bible_pos_stmt, 1);
         *z = sqlite3_column_int(get_bible_pos_stmt, 2);
+        printf("DB: FOUND! Position: (%d, %d, %d)\n", *x, *y, *z);
         mtx_unlock(&load_mtx);
         return 1;
     }
+    printf("DB: NOT FOUND (step result: %d, expected %d for SQLITE_ROW)\n", step_result, SQLITE_ROW);
     mtx_unlock(&load_mtx);
     return 0;
 }
@@ -708,6 +723,52 @@ void db_delete_all_daily_reading_blocks() {
     sqlite3_reset(stmt);
     sqlite3_step(stmt);
     mtx_unlock(&load_mtx);
+}
+
+// Save daily reading Z offsets for teleportation (365 days)
+void db_save_daily_reading_z_offsets(int *offsets, int count) {
+    if (!db_enabled) {
+        return;
+    }
+    static sqlite3_stmt *stmt = NULL;
+    if (!stmt) {
+        const char *query = "insert or replace into daily_reading_z_offsets (day, z_offset) values (?, ?);";
+        sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    }
+    mtx_lock(&load_mtx);
+    for (int i = 0; i < count; i++) {
+        sqlite3_reset(stmt);
+        sqlite3_bind_int(stmt, 1, i + 1);  // Day 1-365
+        sqlite3_bind_int(stmt, 2, offsets[i]);
+        sqlite3_step(stmt);
+    }
+    mtx_unlock(&load_mtx);
+}
+
+// Load daily reading Z offsets from database
+// Returns number of offsets loaded (should be 365 if complete)
+int db_load_daily_reading_z_offsets(int *offsets, int count) {
+    if (!db_enabled) {
+        return 0;
+    }
+    static sqlite3_stmt *stmt = NULL;
+    if (!stmt) {
+        const char *query = "select day, z_offset from daily_reading_z_offsets order by day;";
+        sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(stmt);
+    int loaded = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int day = sqlite3_column_int(stmt, 0);
+        int z_offset = sqlite3_column_int(stmt, 1);
+        if (day >= 1 && day <= count) {
+            offsets[day - 1] = z_offset;  // Store in 0-based array
+            loaded++;
+        }
+    }
+    mtx_unlock(&load_mtx);
+    return loaded;
 }
 
 void db_worker_start(char *path) {

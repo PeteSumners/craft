@@ -2492,7 +2492,7 @@ void parse_command(const char *buffer, int forward) {
             int found_position = db_get_bible_position("INFO", -1, 0, &pos_x, &pos_y, &pos_z);
 
             if (found_position) {
-                // Use precise position from database
+                // Use precise position from database (ONLY database, no math!)
                 s->x = pos_x;
                 s->y = pos_y + 104;  // 104 blocks above text (2 blocks above platform)
                 s->z = pos_z;        // Right at the start of text
@@ -2505,20 +2505,13 @@ void parse_command(const char *buffer, int forward) {
                          (int)s->x, (int)s->y, (int)s->z);
                 add_message(coord_msg);
                 add_message("Enable flying (Tab) to navigate");
+                printf("/bgoto: Teleported to INFO area at (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
             } else {
-                // Fallback to calculated position (if Bible not yet generated)
-                s->x = 0;                      // World origin
-                s->y = BIBLE_START_Y + 104;    // 104 blocks above Bible text (2 above platform)
-                s->z = 0;                      // Right at origin
-                s->rx = 0;
-                s->ry = -45;                   // Look down at text
-
-                char coord_msg[256];
-                snprintf(coord_msg, sizeof(coord_msg),
-                         "Teleported to info area: (%d, %d, %d) [estimated]",
-                         (int)s->x, (int)s->y, (int)s->z);
-                add_message(coord_msg);
-                add_message("Enable flying (Tab) to navigate");
+                // Database lookup failed - Bible not yet generated!
+                add_message("ERROR: Info area not found in database");
+                add_message("The Bible has not been generated yet.");
+                add_message("Wait for world generation to complete, then try again.");
+                printf("/bgoto: FAILED - INFO area not in database. Bible not generated.\n");
             }
             return;
         }
@@ -2623,68 +2616,81 @@ void parse_command(const char *buffer, int forward) {
             if (verse > 0) {
                 // Look up exact verse position
                 found_position = db_get_bible_position(bible_books[book_index], chapter, verse, &pos_x, &pos_y, &pos_z);
-                printf("Looking up %s %d:%d - %s\n", bible_books[book_index], chapter, verse,
+                printf("/bgoto: Looking up '%s' %d:%d - %s\n", bible_books[book_index], chapter, verse,
                        found_position ? "FOUND" : "NOT FOUND");
+                if (found_position) {
+                    printf("/bgoto: Database position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
+                }
             } else if (chapter > 0) {
                 // Look up chapter start (verse 0)
                 found_position = db_get_bible_position(bible_books[book_index], chapter, 0, &pos_x, &pos_y, &pos_z);
-                printf("Looking up %s %d:0 - %s\n", bible_books[book_index], chapter,
+                printf("/bgoto: Looking up '%s' %d:0 - %s\n", bible_books[book_index], chapter,
                        found_position ? "FOUND" : "NOT FOUND");
+                if (found_position) {
+                    printf("/bgoto: Database position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
+                }
             } else {
                 // Look up book start (chapter 0, verse 0)
                 found_position = db_get_bible_position(bible_books[book_index], 0, 0, &pos_x, &pos_y, &pos_z);
-                printf("Looking up %s 0:0 - %s\n", bible_books[book_index],
+                printf("/bgoto: Looking up '%s' 0:0 - %s\n", bible_books[book_index],
                        found_position ? "FOUND" : "NOT FOUND");
+                if (found_position) {
+                    printf("/bgoto: Database position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
+                } else {
+                    printf("/bgoto: WARNING - Book start not in database. Bible may not be generated yet.\n");
+                }
             }
 
             if (found_position) {
-                // Use precise position from database
-                printf("Using precise position: (%d, %d, %d)\n", pos_x, pos_y, pos_z);
+                // Use precise position from database (ONLY database, no math!)
                 s->x = pos_x;
                 s->y = pos_y + 104;         // 104 blocks above text (2 blocks above platform)
                 s->z = pos_z;               // Right at the start of the text
-            } else {
-                // Fallback to estimated position (Bible not yet generated)
-                printf("DEBUG: Calculating estimated position for book_index=%d\n", book_index);
-                printf("DEBUG: Formula: X = %d + (%d * %d) = %d\n",
-                       BIBLE_START_X, book_index, book_spacing,
-                       BIBLE_START_X + (book_index * book_spacing));
-                s->x = BIBLE_START_X + (book_index * book_spacing);
-                int z_offset = 0;
-                if (chapter > 0) {
-                    z_offset = (chapter - 1) * 360;
-                    if (verse > 0) {
-                        z_offset += (verse - 1) * 18;
-                    }
+                s->rx = 0;   // Look south (along +Z axis, toward text)
+                s->ry = -45; // Look down at text far below
+
+                printf("/bgoto: Teleported to database position: (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
+
+                char msg[256];
+                char coord_msg[256];
+                if (verse > 0) {
+                    snprintf(msg, sizeof(msg), "Teleported to %s %d:%d",
+                             bible_books[book_index], chapter, verse);
+                } else if (chapter > 0) {
+                    snprintf(msg, sizeof(msg), "Teleported to %s chapter %d",
+                             bible_books[book_index], chapter);
+                } else {
+                    snprintf(msg, sizeof(msg), "Teleported to %s",
+                             bible_books[book_index]);
                 }
-                s->y = BIBLE_START_Y + 104; // 104 blocks above Bible text (2 above platform)
-                s->z = BIBLE_START_Z + z_offset;  // Right at the start
+                add_message(msg);
 
-                printf("Using estimated position: (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
-            }
-
-            s->rx = 0;   // Look south (along +Z axis, toward text)
-            s->ry = -45; // Look down at text far below
-
-            char msg[256];
-            char coord_msg[256];
-            if (verse > 0) {
-                snprintf(msg, sizeof(msg), "Teleported to %s %d:%d",
-                         bible_books[book_index], chapter, verse);
-            } else if (chapter > 0) {
-                snprintf(msg, sizeof(msg), "Teleported to %s chapter %d",
-                         bible_books[book_index], chapter);
+                snprintf(coord_msg, sizeof(coord_msg), "Position: (%d, %d, %d)",
+                         (int)s->x, (int)s->y, (int)s->z);
+                add_message(coord_msg);
+                add_message("Enable flying (Tab) to navigate");
             } else {
-                snprintf(msg, sizeof(msg), "Teleported to %s",
-                         bible_books[book_index]);
+                // Database lookup failed - Bible not yet generated!
+                char error_msg[256];
+                if (verse > 0) {
+                    snprintf(error_msg, sizeof(error_msg),
+                             "ERROR: %s %d:%d not found in database",
+                             bible_books[book_index], chapter, verse);
+                } else if (chapter > 0) {
+                    snprintf(error_msg, sizeof(error_msg),
+                             "ERROR: %s chapter %d not found in database",
+                             bible_books[book_index], chapter);
+                } else {
+                    snprintf(error_msg, sizeof(error_msg),
+                             "ERROR: %s not found in database",
+                             bible_books[book_index]);
+                }
+                add_message(error_msg);
+                add_message("The Bible has not been generated yet.");
+                add_message("Wait for world generation to complete, then try again.");
+                printf("/bgoto: FAILED - Position not in database. Bible not generated.\n");
+                return;
             }
-            add_message(msg);
-
-            snprintf(coord_msg, sizeof(coord_msg), "Position: (%d, %d, %d)%s",
-                     (int)s->x, (int)s->y, (int)s->z,
-                     found_position ? "" : " [estimated]");
-            add_message(coord_msg);
-            add_message("Enable flying (Tab) to navigate");
         } else {
             add_message("Book not found! Use /bgoto to see all books.");
         }
@@ -2697,7 +2703,7 @@ void parse_command(const char *buffer, int forward) {
         int day_of_year;
 
         // Check if a day number was provided
-        char *arg = buffer + 6;
+        const char *arg = buffer + 6;
         while (*arg == ' ') arg++; // Skip spaces
 
         if (*arg == '\0') {
@@ -2722,16 +2728,48 @@ void parse_command(const char *buffer, int forward) {
             }
         }
 
-        // Get Z offset for the reading
+        // Get Z offset for the reading (ONLY database, no math!)
         int z_offset = bible_get_daily_z_offset(day_of_year);
 
+        printf("/daily: Day %d of year, Z offset = %d\n", day_of_year, z_offset);
+
+        // Check if the position is in the database
+        if (z_offset == 0) {
+            // Z offset is 0, which means it's not in the database
+            // (Day 1 starts at a non-zero Z due to the title/instructions)
+            printf("/daily: FAILED - Z offset is 0. Daily reading table not generated.\n");
+
+            // Calculate date for error message
+            static const int month_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+            static const char *month_names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            int day_of_month = day_of_year;
+            int month = 0;
+            while (day_of_month > month_days[month]) {
+                day_of_month -= month_days[month];
+                month++;
+            }
+
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg),
+                     "ERROR: Day %d (%s %d) not found in database",
+                     day_of_year, month_names[month], day_of_month);
+            add_message(error_msg);
+            add_message("The daily reading table has not been generated yet.");
+            add_message("Wait for world generation to complete, then try again.");
+            return;
+        }
+
+        // Database lookup successful - teleport!
         s->x = DAILY_READING_X;
         s->y = DAILY_READING_Y + 104;
         s->z = z_offset;
         s->rx = 0;   // Look south (along +Z axis)
         s->ry = -45; // Look down at text
 
-        // Calculate date for message
+        printf("/daily: Teleporting to (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
+
+        // Calculate date for success message
         static const int month_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
         static const char *month_names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};

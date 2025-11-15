@@ -42,6 +42,8 @@ void db_insert_daily_reading_block(int x, int y, int z, const char *date);
 void db_delete_daily_reading_blocks(const char *date);
 int db_get_all_daily_reading_blocks(int **out_x, int **out_y, int **out_z);
 void db_delete_all_daily_reading_blocks();
+void db_save_daily_reading_z_offsets(int *offsets, int count);
+int db_load_daily_reading_z_offsets(int *offsets, int count);
 void db_worker_start();
 void db_worker_stop();
 int db_worker_run(void *arg);
