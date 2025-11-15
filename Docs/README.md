@@ -89,6 +89,23 @@ Render Scripture passages as monumental voxel text:
 - `BLOCK` - Block type (3=Stone, 4=Brick, etc.)
 - `WIDTH` - Max line width in characters (optional, default 60)
 
+### Navigation Commands (NEW!)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/bgoto` | Return to info area | `/bgoto` |
+| `/bgoto BOOK` | Teleport to book start | `/bgoto Genesis` |
+| `/bgoto BOOK CH` | Teleport to chapter | `/bgoto John 3` |
+| `/bgoto BOOK CH:V` | Teleport to verse | `/bgoto John 3:16` |
+| `/daily` | Teleport to today's reading | `/daily` |
+| `/daily DAY` | Teleport to specific day (1-365) | `/daily 100` |
+
+**Features:**
+- **Database-driven** - Uses exact positions saved during world generation
+- **Instant navigation** - Jump anywhere in the Bible world
+- **Clear errors** - Helpful messages if location not yet generated
+- See **[TeleportBehavior.md](TeleportBehavior.md)** for detailed positioning info
+
 ## Getting Started
 
 ### 1. Initialize Systems
