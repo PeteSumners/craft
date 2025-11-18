@@ -2494,7 +2494,7 @@ void parse_command(const char *buffer, int forward) {
             if (found_position) {
                 // Use precise position from database (ONLY database, no math!)
                 s->x = pos_x;
-                s->y = pos_y + 104;  // 104 blocks above text (2 blocks above platform)
+                s->y = pos_y + 106;  // 106 blocks above text (4 blocks above platform)
                 s->z = pos_z;        // Right at the start of text
                 s->rx = 0;           // Look forward (along +Z)
                 s->ry = -45;         // Look down at text far below
@@ -2644,7 +2644,7 @@ void parse_command(const char *buffer, int forward) {
             if (found_position) {
                 // Use precise position from database (ONLY database, no math!)
                 s->x = pos_x;
-                s->y = pos_y + 104;         // 104 blocks above text (2 blocks above platform)
+                s->y = pos_y + 106;         // 106 blocks above text (4 blocks above platform)
                 s->z = pos_z;               // Right at the start of the text
                 s->rx = 0;   // Look south (along +Z axis, toward text)
                 s->ry = -45; // Look down at text far below
@@ -2762,7 +2762,7 @@ void parse_command(const char *buffer, int forward) {
 
         // Database lookup successful - teleport!
         s->x = DAILY_READING_X;
-        s->y = DAILY_READING_Y + 104;
+        s->y = DAILY_READING_Y + 106;
         s->z = z_offset;
         s->rx = 0;   // Look south (along +Z axis)
         s->ry = -45; // Look down at text
