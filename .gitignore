@@ -1,0 +1,38 @@
+# Build artifacts
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database files
+*.db
+*.db-journal
+
+# Log files
+*.log
+Craft/client_output.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

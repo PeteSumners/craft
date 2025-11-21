@@ -487,7 +487,6 @@ class Model(object):
         self.send_position(client)
     def on_talk(self, client, *args):
         text = ','.join(args)
-        print("DEBUG: on_talk received text=%r (len=%d)" % (text, len(text)))
         if text.startswith('/'):
             for pattern, func in self.patterns:
                 match = pattern.match(text)
@@ -541,7 +540,6 @@ class Model(object):
         self.send_position(client)
     def on_bgoto(self, client, args=None):
         # Bible navigation: /bgoto [BOOK [CHAPTER[:VERSE]]]
-        print("DEBUG: on_bgoto called with args=%r" % (args,))
         if args is None or args.strip() == '':
             # No arguments - teleport to INFO area
             query = 'select x, y, z from bible_position where book = ? and chapter = ? and verse = ?;'
