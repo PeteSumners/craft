@@ -6,8 +6,8 @@
 void client_enable();
 void client_disable();
 int get_client_enabled();
-void client_connect(char *hostname, int port);
-void client_start();
+int client_connect(char *hostname, int port);
+int client_start();
 void client_stop();
 void client_send(char *data);
 char *client_recv();

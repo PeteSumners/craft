@@ -3,8 +3,13 @@
 
 from ctypes import CDLL, CFUNCTYPE, c_float, c_int, c_void_p
 from collections import OrderedDict
+import sys
 
-dll = CDLL('./world')
+if sys.platform == 'win32':
+    lib_path = './world.dll'
+else:
+    lib_path = './world.so'
+dll = CDLL(lib_path)
 
 WORLD_FUNC = CFUNCTYPE(None, c_int, c_int, c_int, c_int, c_void_p)
 

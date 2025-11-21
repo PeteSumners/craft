@@ -2436,6 +2436,12 @@ void parse_command(const char *buffer, int forward) {
         }
     }
     else if (strncmp(buffer, "/bgoto", 6) == 0) {
+        // In online mode, send /bgoto to the server instead of handling locally
+        if (get_client_enabled()) {
+            client_talk(buffer);
+            return;
+        }
+
         // Bible navigation: /bgoto [BOOK [CHAPTER[:VERSE]]]
         // Examples: /bgoto, /bgoto Genesis, /bgoto Genesis 1, /bgoto Genesis 1:3
 
@@ -2508,10 +2514,14 @@ void parse_command(const char *buffer, int forward) {
                 printf("/bgoto: Teleported to INFO area at (%d, %d, %d)\n", (int)s->x, (int)s->y, (int)s->z);
             } else {
                 // Database lookup failed - Bible not yet generated!
-                add_message("ERROR: Info area not found in database");
-                add_message("The Bible has not been generated yet.");
-                add_message("Wait for world generation to complete, then try again.");
-                printf("/bgoto: FAILED - INFO area not in database. Bible not generated.\n");
+                add_message("ERROR: Bible navigation is not available");
+                add_message("The Bible has not been generated in this world.");
+                add_message("");
+                add_message("To use /bgoto commands:");
+                add_message("1. Start the game in offline mode: ./craft");
+                add_message("2. Wait for Bible generation to complete (~30 seconds)");
+                add_message("3. Then /bgoto will work in both offline and online mode");
+                printf("/bgoto: FAILED - Bible not generated. Run in offline mode first.\n");
             }
             return;
         }
@@ -3484,10 +3494,20 @@ int main(int argc, char **argv) {
         // CLIENT INITIALIZATION //
         if (g->mode == MODE_ONLINE) {
             client_enable();
-            client_connect(g->server_addr, g->server_port);
-            client_start();
-            client_version(1);
-            login();
+            if (client_connect(g->server_addr, g->server_port) != 0) {
+                fprintf(stderr, "Failed to connect to server - switching to offline mode\n");
+                g->mode = MODE_OFFLINE;
+                g->mode_changed = 1;
+            }
+            else if (client_start() != 0) {
+                fprintf(stderr, "Failed to start client - switching to offline mode\n");
+                g->mode = MODE_OFFLINE;
+                g->mode_changed = 1;
+            }
+            else {
+                client_version(1);
+                login();
+            }
         }
 
         // LOCAL VARIABLES //

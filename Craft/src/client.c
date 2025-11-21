@@ -17,30 +17,34 @@
 #define QUEUE_SIZE 1048576
 #define RECV_SIZE 4096
 
-static int client_enabled = 0;
-static int running = 0;
-static int sd = 0;
-static int bytes_sent = 0;
-static int bytes_received = 0;
-static char *queue = 0;
-static int qsize = 0;
-static thrd_t recv_thread;
-static mtx_t mutex;
+typedef struct {
+    int enabled;
+    int running;
+    int sd;
+    int bytes_sent;
+    int bytes_received;
+    char *queue;
+    int qsize;
+    thrd_t recv_thread;
+    mtx_t mutex;
+} Client;
+
+static Client client = {0};
 
 void client_enable() {
-    client_enabled = 1;
+    client.enabled = 1;
 }
 
 void client_disable() {
-    client_enabled = 0;
+    client.enabled = 0;
 }
 
 int get_client_enabled() {
-    return client_enabled;
+    return client.enabled;
 }
 
 int client_sendall(int sd, char *data, int length) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return 0;
     }
     int count = 0;
@@ -51,23 +55,24 @@ int client_sendall(int sd, char *data, int length) {
         }
         count += n;
         length -= n;
-        bytes_sent += n;
+        client.bytes_sent += n;
     }
     return 0;
 }
 
 void client_send(char *data) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
-    if (client_sendall(sd, data, strlen(data)) == -1) {
-        perror("client_sendall");
-        exit(1);
+    if (client_sendall(client.sd, data, strlen(data)) == -1) {
+        perror("client_send failed");
+        fprintf(stderr, "Network error - disabling client\n");
+        client_disable();
     }
 }
 
 void client_version(int version) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -76,7 +81,7 @@ void client_version(int version) {
 }
 
 void client_login(const char *username, const char *identity_token) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -85,7 +90,7 @@ void client_login(const char *username, const char *identity_token) {
 }
 
 void client_position(float x, float y, float z, float rx, float ry) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     static float px, py, pz, prx, pry = 0;
@@ -105,7 +110,7 @@ void client_position(float x, float y, float z, float rx, float ry) {
 }
 
 void client_chunk(int p, int q, int key) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -114,7 +119,7 @@ void client_chunk(int p, int q, int key) {
 }
 
 void client_block(int x, int y, int z, int w) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -123,7 +128,7 @@ void client_block(int x, int y, int z, int w) {
 }
 
 void client_light(int x, int y, int z, int w) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -132,7 +137,7 @@ void client_light(int x, int y, int z, int w) {
 }
 
 void client_sign(int x, int y, int z, int face, const char *text) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     char buffer[1024];
@@ -141,7 +146,7 @@ void client_sign(int x, int y, int z, int face, const char *text) {
 }
 
 void client_talk(const char *text) {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
     if (strlen(text) == 0) {
@@ -153,26 +158,26 @@ void client_talk(const char *text) {
 }
 
 char *client_recv() {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return 0;
     }
     char *result = 0;
-    mtx_lock(&mutex);
-    char *p = queue + qsize - 1;
-    while (p >= queue && *p != '\n') {
+    mtx_lock(&client.mutex);
+    char *p = client.queue + client.qsize - 1;
+    while (p >= client.queue && *p != '\n') {
         p--;
     }
-    if (p >= queue) {
-        int length = p - queue + 1;
+    if (p >= client.queue) {
+        int length = p - client.queue + 1;
         result = malloc(sizeof(char) * (length + 1));
-        memcpy(result, queue, sizeof(char) * length);
+        memcpy(result, client.queue, sizeof(char) * length);
         result[length] = '\0';
-        int remaining = qsize - length;
-        memmove(queue, p + 1, remaining);
-        qsize -= length;
-        bytes_received += length;
+        int remaining = client.qsize - length;
+        memmove(client.queue, p + 1, remaining);
+        client.qsize -= length;
+        client.bytes_received += length;
     }
-    mtx_unlock(&mutex);
+    mtx_unlock(&client.mutex);
     return result;
 }
 
@@ -180,10 +185,12 @@ int recv_worker(void *arg) {
     char *data = malloc(sizeof(char) * RECV_SIZE);
     while (1) {
         int length;
-        if ((length = recv(sd, data, RECV_SIZE - 1, 0)) <= 0) {
-            if (running) {
-                perror("recv");
-                exit(1);
+        if ((length = recv(client.sd, data, RECV_SIZE - 1, 0)) <= 0) {
+            if (client.running) {
+                perror("recv failed");
+                fprintf(stderr, "Connection lost - disabling client\n");
+                client_disable();
+                break;
             }
             else {
                 break;
@@ -192,13 +199,13 @@ int recv_worker(void *arg) {
         data[length] = '\0';
         while (1) {
             int done = 0;
-            mtx_lock(&mutex);
-            if (qsize + length < QUEUE_SIZE) {
-                memcpy(queue + qsize, data, sizeof(char) * (length + 1));
-                qsize += length;
+            mtx_lock(&client.mutex);
+            if (client.qsize + length < QUEUE_SIZE) {
+                memcpy(client.queue + client.qsize, data, sizeof(char) * (length + 1));
+                client.qsize += length;
                 done = 1;
             }
-            mtx_unlock(&mutex);
+            mtx_unlock(&client.mutex);
             if (done) {
                 break;
             }
@@ -209,57 +216,69 @@ int recv_worker(void *arg) {
     return 0;
 }
 
-void client_connect(char *hostname, int port) {
-    if (!client_enabled) {
-        return;
+int client_connect(char *hostname, int port) {
+    if (!client.enabled) {
+        return -1;
     }
     struct hostent *host;
     struct sockaddr_in address;
     if ((host = gethostbyname(hostname)) == 0) {
         perror("gethostbyname");
-        exit(1);
+        client_disable();
+        return -1;
     }
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = ((struct in_addr *)(host->h_addr_list[0]))->s_addr;
     address.sin_port = htons(port);
-    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    if ((client.sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket");
-        exit(1);
+        client_disable();
+        return -1;
     }
-    if (connect(sd, (struct sockaddr *)&address, sizeof(address)) == -1) {
+    if (connect(client.sd, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("connect");
-        exit(1);
+        client_disable();
+        return -1;
     }
+    return 0;
 }
 
-void client_start() {
-    if (!client_enabled) {
-        return;
+int client_start() {
+    if (!client.enabled) {
+        return -1;
     }
-    running = 1;
-    queue = (char *)calloc(QUEUE_SIZE, sizeof(char));
-    qsize = 0;
-    mtx_init(&mutex, mtx_plain);
-    if (thrd_create(&recv_thread, recv_worker, NULL) != thrd_success) {
+    client.running = 1;
+    client.queue = (char *)calloc(QUEUE_SIZE, sizeof(char));
+    if (!client.queue) {
+        perror("calloc failed");
+        client_disable();
+        return -1;
+    }
+    client.qsize = 0;
+    mtx_init(&client.mutex, mtx_plain);
+    if (thrd_create(&client.recv_thread, recv_worker, NULL) != thrd_success) {
         perror("thrd_create");
-        exit(1);
+        free(client.queue);
+        client.queue = NULL;
+        mtx_destroy(&client.mutex);
+        client_disable();
+        return -1;
     }
+    return 0;
 }
 
 void client_stop() {
-    if (!client_enabled) {
+    if (!client.enabled) {
         return;
     }
-    running = 0;
-    close(sd);
-    // if (thrd_join(recv_thread, NULL) != thrd_success) {
-    //     perror("thrd_join");
-    //     exit(1);
-    // }
-    // mtx_destroy(&mutex);
-    qsize = 0;
-    free(queue);
-    // printf("Bytes Sent: %d, Bytes Received: %d\n",
-    //     bytes_sent, bytes_received);
+    client.running = 0;
+    close(client.sd);
+    if (thrd_join(client.recv_thread, NULL) != thrd_success) {
+        perror("thrd_join");
+    }
+    mtx_destroy(&client.mutex);
+    client.qsize = 0;
+    free(client.queue);
+    client.queue = NULL;
 }

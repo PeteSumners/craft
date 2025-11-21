@@ -1,7 +1,7 @@
 from math import floor
 from world import World
-import Queue
-import SocketServer
+import queue as Queue
+import socketserver as SocketServer
 import datetime
 import random
 import re
@@ -57,9 +57,9 @@ except ImportError:
     pass
 
 def log(*args):
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     line = ' '.join(map(str, (now,) + args))
-    print line
+    print(line)
     with open(LOG_PATH, 'a') as fp:
         fp.write('%s\n' % line)
 
@@ -109,15 +109,15 @@ class Handler(SocketServer.BaseRequestHandler):
         model = self.server.model
         model.enqueue(model.on_connect, self)
         try:
-            buf = []
+            buf = b''
             while True:
                 data = self.request.recv(BUFFER_SIZE)
                 if not data:
                     break
-                buf.extend(data.replace('\r\n', '\n'))
-                while '\n' in buf:
-                    index = buf.index('\n')
-                    line = ''.join(buf[:index])
+                buf += data.replace(b'\r\n', b'\n')
+                while b'\n' in buf:
+                    index = buf.index(b'\n')
+                    line = buf[:index].decode('utf-8')
                     buf = buf[index + 1:]
                     if not line:
                         continue
@@ -140,7 +140,7 @@ class Handler(SocketServer.BaseRequestHandler):
         self.request.close()
     def start(self):
         thread = threading.Thread(target=self.run)
-        thread.setDaemon(True)
+        thread.daemon = True
         thread.start()
     def run(self):
         while self.running:
@@ -155,7 +155,7 @@ class Handler(SocketServer.BaseRequestHandler):
                         pass
                 except Queue.Empty:
                     continue
-                data = ''.join(buf)
+                data = ''.join(buf).encode('utf-8')
                 self.request.sendall(data)
             except Exception:
                 self.request.close()
@@ -184,6 +184,7 @@ class Model(object):
         self.patterns = [
             (re.compile(r'^/nick(?:\s+([^,\s]+))?$'), self.on_nick),
             (re.compile(r'^/spawn$'), self.on_spawn),
+            (re.compile(r'^/bgoto(?:\s+(.+))?$'), self.on_bgoto),
             (re.compile(r'^/goto(?:\s+(\S+))?$'), self.on_goto),
             (re.compile(r'^/pq\s+(-?[0-9]+)\s*,?\s*(-?[0-9]+)$'), self.on_pq),
             (re.compile(r'^/help(?:\s+(\S+))?$'), self.on_help),
@@ -191,7 +192,7 @@ class Model(object):
         ]
     def start(self):
         thread = threading.Thread(target=self.run)
-        thread.setDaemon(True)
+        thread.daemon = True
         thread.start()
     def run(self):
         self.connection = sqlite3.connect(DB_PATH)
@@ -486,6 +487,7 @@ class Model(object):
         self.send_position(client)
     def on_talk(self, client, *args):
         text = ','.join(args)
+        print("DEBUG: on_talk received text=%r (len=%d)" % (text, len(text)))
         if text.startswith('/'):
             for pattern, func in self.patterns:
                 match = pattern.match(text)
@@ -537,6 +539,101 @@ class Model(object):
         client.position = (p * CHUNK_SIZE, 0, q * CHUNK_SIZE, 0, 0)
         client.send(YOU, client.client_id, *client.position)
         self.send_position(client)
+    def on_bgoto(self, client, args=None):
+        # Bible navigation: /bgoto [BOOK [CHAPTER[:VERSE]]]
+        print("DEBUG: on_bgoto called with args=%r" % (args,))
+        if args is None or args.strip() == '':
+            # No arguments - teleport to INFO area
+            query = 'select x, y, z from bible_position where book = ? and chapter = ? and verse = ?;'
+            rows = list(self.execute(query, ('INFO', -1, 0)))
+            if rows:
+                x, y, z = rows[0]
+                # Teleport 106 blocks above the text
+                client.position = (x, y + 106, z, 0, -45)
+                client.send(YOU, client.client_id, *client.position)
+                self.send_position(client)
+                client.send(TALK, 'Teleported to info area')
+            else:
+                client.send(TALK, 'ERROR: Bible not generated on server')
+                client.send(TALK, 'Contact server admin to generate Bible world')
+        else:
+            # Parse book/chapter/verse from args
+            bible_books = [
+                "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
+                "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
+                "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra",
+                "Nehemiah", "Esther", "Job", "Psalm", "Proverbs",
+                "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations",
+                "Ezekiel", "Daniel", "Hosea", "Joel", "Amos",
+                "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk",
+                "Zephaniah", "Haggai", "Zechariah", "Malachi",
+                "Matthew", "Mark", "Luke", "John", "Acts",
+                "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians",
+                "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy",
+                "2 Timothy", "Titus", "Philemon", "Hebrews", "James",
+                "1 Peter", "2 Peter", "1 John", "2 John", "3 John",
+                "Jude", "Revelation"
+            ]
+
+            book = None
+            chapter = 0
+            verse = 0
+
+            # Try to match book name (case-insensitive)
+            args_lower = args.lower()
+            for book_name in bible_books:
+                book_lower = book_name.lower()
+                if args_lower.startswith(book_lower):
+                    # Check that it's followed by space, digit, or end of string
+                    next_idx = len(book_name)
+                    if next_idx >= len(args) or args[next_idx] in ' 0123456789':
+                        book = book_name
+                        remainder = args[next_idx:].strip()
+
+                        # Parse chapter:verse
+                        if ':' in remainder:
+                            parts = remainder.split(':', 1)
+                            try:
+                                chapter = int(parts[0])
+                                verse = int(parts[1])
+                            except ValueError:
+                                pass
+                        elif remainder:
+                            try:
+                                chapter = int(remainder)
+                            except ValueError:
+                                pass
+                        break
+
+            if not book:
+                client.send(TALK, 'Book not found! Use /bgoto to see all books.')
+                return
+
+            # Query database for position
+            query = 'select x, y, z from bible_position where book = ? and chapter = ? and verse = ?;'
+            rows = list(self.execute(query, (book, chapter, verse)))
+
+            if rows:
+                x, y, z = rows[0]
+                # Teleport 106 blocks above the text
+                client.position = (x, y + 106, z, 0, -45)
+                client.send(YOU, client.client_id, *client.position)
+                self.send_position(client)
+
+                if verse > 0:
+                    client.send(TALK, 'Teleported to %s %d:%d' % (book, chapter, verse))
+                elif chapter > 0:
+                    client.send(TALK, 'Teleported to %s chapter %d' % (book, chapter))
+                else:
+                    client.send(TALK, 'Teleported to %s' % book)
+            else:
+                if verse > 0:
+                    client.send(TALK, 'ERROR: %s %d:%d not found in database' % (book, chapter, verse))
+                elif chapter > 0:
+                    client.send(TALK, 'ERROR: %s chapter %d not found' % (book, chapter))
+                else:
+                    client.send(TALK, 'ERROR: %s not found in database' % book)
+                client.send(TALK, 'The Bible has not been generated on the server yet.')
     def on_help(self, client, topic=None):
         if topic is None:
             client.send(TALK, 'Type "t" to chat. Type "/" to type commands:')
@@ -636,7 +733,7 @@ def cleanup():
     count = 0
     total = 0
     delete_query = 'delete from block where x = %d and y = %d and z = %d;'
-    print 'begin;'
+    print('begin;')
     for p, q in chunks:
         chunk = world.create_chunk(p, q)
         query = 'select x, y, z, w from block where p = :p and q = :q;'
@@ -650,10 +747,10 @@ def cleanup():
             original = chunk.get((x, y, z), 0)
             if w == original or original in INDESTRUCTIBLE_ITEMS:
                 count += 1
-                print delete_query % (x, y, z)
+                print(delete_query % (x, y, z))
     conn.close()
-    print 'commit;'
-    print >> sys.stderr, '%d of %d blocks will be cleaned up' % (count, total)
+    print('commit;')
+    print('%d of %d blocks will be cleaned up' % (count, total), file=sys.stderr)
 
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == 'cleanup':
